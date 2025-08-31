@@ -1,47 +1,114 @@
-name: SonarQube
+name: SonarCloud (VSTO .NET Framework 4.8)
+
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
     types: [opened, synchronize, reopened]
+
 jobs:
   build:
-    name: Build and analyze
+    name: Build & Analyze
     runs-on: windows-latest
+
+    env:
+      # SonarCloud org & project
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORG: xafinsight
+      SONAR_PROJECT_KEY: XafInsight_XafInsight
+      # Optional: skip JRE auto-provision (we already set up Java below)
+      SONAR_SCANNER_OPTS: "-Dsonar.scanner.skipJreProvisioning=true"
+
     steps:
-      - name: Set up JDK 17
+      - name: Set up JDK 17 (for Sonar analyzers)
         uses: actions/setup-java@v4
         with:
           java-version: 17
-          distribution: 'zulu' # Alternative distribution options are available.
-      - uses: actions/checkout@v4
+          distribution: zulu
+
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Cache SonarQube Cloud packages
-        uses: actions/cache@v4
-        with:
-          path: ~\sonar\cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-      - name: Cache SonarQube Cloud scanner
-        id: cache-sonar-scanner
+          fetch-depth: 0
+
+      # MSBuild (Visual Studio) for .NET Framework projects
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # NuGet restore for packages.config solutions
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v3
+
+      - name: Cache Sonar scanner
         uses: actions/cache@v4
         with:
           path: .\.sonar\scanner
           key: ${{ runner.os }}-sonar-scanner
           restore-keys: ${{ runner.os }}-sonar-scanner
-      - name: Install SonarQube Cloud scanner
+
+      - name: Install SonarScanner for MSBuild (dotnet-sonarscanner)
         if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
         shell: powershell
         run: |
-          New-Item -Path .\.sonar\scanner -ItemType Directory
+          New-Item -Path .\.sonar\scanner -ItemType Directory -Force | Out-Null
           dotnet tool update dotnet-sonarscanner --tool-path .\.sonar\scanner
-      - name: Build and analyze
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        shell: powershell
+
+      # --- CHANGE THIS: provide your actual solution path ---
+      - name: Set solution path
+        id: sln
+        shell: pwsh
         run: |
-          .\.sonar\scanner\dotnet-sonarscanner begin /k:"XafInsight_XafInsight" /o:"xafinsight" /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
-          dotnet build
-          .\.sonar\scanner\dotnet-sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+          # If your .sln is at repo root, set it directly:
+          $sln = "XafInsight.sln"
+          # Or detect automatically (first .sln found):
+          # $sln = (Get-ChildItem -Path . -Recurse -Filter *.sln | Select-Object -First 1).FullName
+          echo "sln=$sln" >> $env:GITHUB_OUTPUT
+
+      - name: NuGet restore
+        shell: pwsh
+        run: |
+          nuget restore "${{ steps.sln.outputs.sln }}"
+
+      - name: Sonar BEGIN
+        shell: pwsh
+        run: >
+          .\.sonar\scanner\dotnet-sonarscanner begin
+          /k:"${{ env.SONAR_PROJECT_KEY }}"
+          /o:"${{ env.SONAR_ORG }}"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.token="${{ env.SONAR_TOKEN }}"
+          /d:sonar.cs.vscoveragexml.reportsPaths="**/*.coveragexml"
+          /d:sonar.coverage.exclusions="**/*.Designer.cs,**/*.g.cs,**/*.g.i.cs,**/bin/**,**/obj/**"
+
+      - name: Build (MSBuild)
+        shell: pwsh
+        run: >
+          msbuild "${{ steps.sln.outputs.sln }}"
+          /t:Rebuild
+          /p:Configuration=Release
+          /p:Platform="Any CPU"
+          /m
+
+      # (Optional) Generate test coverage if you have tests.
+      # For .NET Framework, you can use VSTest + VS coverage and convert to XML.
+      # Example (uncomment and adapt your test DLL paths):
+      # - name: Test with coverage (VSTest)
+      #   shell: pwsh
+      #   run: >
+      #     "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\Extensions\TestPlatform\vstest.console.exe"
+      #     ".\tests\YourTests\bin\Release\YourTests.dll"
+      #     /EnableCodeCoverage
+      #
+      # - name: Convert .coverage to XML (vscoveragexml)
+      #   shell: pwsh
+      #   run: |
+      #     $converter = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Team Tools\Dynamic Code Coverage Tools\CodeCoverage.exe"
+      #     Get-ChildItem -Recurse -Filter *.coverage | ForEach-Object {
+      #       & "$converter" analyze /output:("$($_.FullName).xml") "$($_.FullName)"
+      #     }
+
+      - name: Sonar END
+        shell: pwsh
+        run: >
+          .\.sonar\scanner\dotnet-sonarscanner end
+          /d:sonar.token="${{ env.SONAR_TOKEN }}"
