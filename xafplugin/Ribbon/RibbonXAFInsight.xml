@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="Ribbon_Load">
+  <ribbon>
+    <tabs>
+      <tab id="XafInsightTab" label="XAF Insight">
+        <group id="XafInsightConnection" label="Connection">
+          <button id="ConnectButton" label="Load file" getImage="GetConnectButtonImage" size="large" getEnabled="ButtonConnect_GetEnabled" onAction="ButtonConnect_Click"/>
+          <button id="DisconnectButton" label="Detach file" getImage="GetCloseButtonImage" size="large" getEnabled="ButtonDisconnect_GetEnabled" onAction="ButtonDisconnect_Click"/>
+        </group>
+        <group id="Export" label="Export">
+          <button id="ExportTable" label="Export Table" getImage="GetExportButtonImage" size="large" getEnabled="ButtonExport_GetEnabled" onAction="ButtonExportTable_Click"/>
+        </group>
+        <group id="XafInsightSettings" label="Settings">
+          <button id="Relations" label="Relationships" getImage="GetRelationButtonImage" size="large" getEnabled="ButtonDisconnect_GetEnabled" onAction="ButtonRelation_Click"/>
+          <button id="Tabels" label="Table management" getImage="GetTableButtonImage" size="large" getEnabled="ButtonDisconnect_GetEnabled" onAction="ButtonTabel_Click"/>
+          <button id="ColumnMapping" label="Rename Columns" getImage="GetMappingButtonImage" size="large" getEnabled="ButtonDisconnect_GetEnabled" onAction="ButtonColumnMapping_Click"/>
+
+        </group>
+        <group id="XafInsightDatabase" label="Export/import">
+          <button id="ExportSQLite" label="Export SQlite database" getImage="GetExportSQLiteImage" size="large" getEnabled="ButtonDisconnect_GetEnabled" onAction="ButtonExportSQLite_Click"/>
+          <button id="ExportSettings" label="Export settings" getImage="GetExportSettingsImage" size="large" getEnabled="ButtonDisconnect_GetEnabled" onAction="ButtonExportSettings_Click"/>
+          <button id="ImportSettings" label="Import settings" getImage="GetImportSettingsImage" size="large" getEnabled="ButtonDisconnect_GetEnabled" onAction="ButtonImportSettings_Click"/>
+        </group>
+        <group id="XafInsightHelp" label="Help">
+          <button id="Help" label="Help" getImage="GetHelpButtonImage" size="large" onAction="ButtonHelp_Click"/>
+          <button id="ReportIssue" label="Report issue" getImage="GetReportIssueButtonImage" size="large" onAction="ButtonReportIssue_Click"/>
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

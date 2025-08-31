@@ -1,0 +1,119 @@
+﻿<UserControl x:Class="xafplugin.Form.ExportTableControl"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         Width="400"
+              Focusable="True"
+  KeyboardNavigation.TabNavigation="Cycle"
+  KeyboardNavigation.ControlTabNavigation="Cycle"
+  KeyboardNavigation.DirectionalNavigation="Cycle"
+        >
+    <UserControl.Resources>
+        <!-- Style for the delete button, only visible on hover -->
+        <Style x:Key="DeleteButtonStyle" TargetType="Button">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="10,0,0,0"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="#FFF"/>
+            <Setter Property="BorderBrush" Value="#E85D5D"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="#E85D5D"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip" Value="Delete table"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
+                    <Setter Property="Opacity" Value="1"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsMouseOver}" Value="True">
+                    <Setter Property="Opacity" Value="1"/>
+                </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FFE6E6"/>
+                    <Setter Property="BorderBrush" Value="#D22"/>
+                    <Setter Property="Foreground" Value="#D22"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    <StackPanel Margin="0">
+
+        <TabControl Margin="10" x:Name="WizardTabControl">
+            <TabItem Header="1. Export">
+                <StackPanel Margin="15">
+                    <Button x:Name="ManageTablesButton" Content="Manage tables" Click="ManageTablesButton_Click" Width="140" Margin="0,0,0,15" HorizontalAlignment="Left"/>
+                    <TextBlock Text="Select the table you want to export:" />
+                    <ComboBox x:Name="TablesComboBox" ItemsSource="{Binding ExportTables}" DisplayMemberPath="Name" SelectedItem="{Binding SelectedTable, Mode=TwoWay}" Margin="0,0,0 ,10"/>
+
+                    <TextBlock x:Name="ExportLocationText" Text="Export location:" Margin="0,10,0,0"/>
+                    <DockPanel Margin="0,5,0,10" x:Name="ExportLocationDock">
+                        <Button x:Name="ExportLocationButton" DockPanel.Dock="Right" Content="→" Width="25" Click="BtnSelectRange_Click"/>
+                        <TextBox x:Name="ExportLocationTextbox" Text="{Binding ExportLocation, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}" IsReadOnly="True"  />
+                    </DockPanel>
+                    <TextBlock
+   Text="Invalid cell selected"
+   Foreground="Gray"
+   Visibility="{Binding InvalidCell}"
+   HorizontalAlignment="Center"
+   Margin="0,5,0,0"/>
+
+                    <TextBlock Text="Rows to export:" Margin="0,10,0,0"/>
+                    <Button x:Name="ExportButton" Content="Export" Click="Export_Click" Height="40" Margin="0,20,0,0" IsEnabled="False"/>
+                    <TextBlock x:Name="ExportStatusText"
+               Text="Export not possible while a cell is being edited."
+               Foreground="Gray"
+               Visibility="Collapsed"
+               HorizontalAlignment="Center"
+               Margin="0,5,0,0"/>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="2. Filter">
+                <StackPanel Margin="15">
+                    <Button Content="Add filter" Width="100" Margin="0,10,0,10" HorizontalAlignment="Left" Click="ButtonFilterToevoegen_click"/>
+                    <DataGrid x:Name="FiltersDataGrid" 
+          ItemsSource="{Binding Filters}"
+          Height="300"
+          AutoGenerateColumns="False"
+          ScrollViewer.VerticalScrollBarVisibility="Auto"
+          CanUserAddRows="False"
+          Margin="0,5,0,0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="150" IsReadOnly="True"/>
+                            <DataGridTemplateColumn Header="Expression" Width="*" IsReadOnly="False">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" Click="BtnVerwijderFilter_Click" Tag="{Binding}" Content="X" Style="{StaticResource DeleteButtonStyle}"/>
+                                            <TextBlock Text="{Binding Expression}" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                                <DataGridTemplateColumn.CellEditingTemplate>
+                                    <DataTemplate>
+                                        <DockPanel>
+                                            <Button DockPanel.Dock="Right" Click="BtnVerwijderFilter_Click" Tag="{Binding}" Content="X" Style="{StaticResource DeleteButtonStyle}"/>
+                                            <TextBox Text="{Binding Expression, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellEditingTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="3. Export settings">
+                <StackPanel Margin="15">
+                    <CheckBox x:Name="ExportSourceFileCheckbox" Content="Export used file" Margin="0,10,0,0" IsChecked="{Binding ExportSourceFile}"/>
+                    <CheckBox x:Name="ExportTablesCheckBox" Content="Export used tables" Margin="0,10,0,0" IsChecked="{Binding ShowExportTables}"/>
+                    <CheckBox x:Name="ExportColumnsCheckBox" Content="Export used columns" Margin="0,10,0,0" IsChecked="{Binding ShowExportColumns}"/>
+                    <CheckBox x:Name="ExportColumnRelationsCheckbox" Content="Export created relations" Margin="0,10,0,0" IsChecked="{Binding ExportColumnRelations}"/>
+                    <CheckBox x:Name="ExportFiltersCheckbox" Content="Export used filters" Margin="0,10,0,0" IsChecked="{Binding ShowExportFilters}"/>
+                    <CheckBox x:Name="ExportMappingCheckbox" Content="Export used table mapping" Margin="0,10,0,0" IsChecked="{Binding ShowExportMapping}"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </StackPanel>
+</UserControl>

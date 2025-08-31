@@ -1,0 +1,44 @@
+﻿<UserControl x:Class="xafplugin.Form.ColumnMappingControl"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+         Height="450" Width="650"
+             Background="#FFF"
+        >
+    <StackPanel>
+        <ComboBox ItemsSource="{Binding Tables}" SelectedItem="{Binding SelectedTable}" Margin="0,0,0,10"/>
+        <Border BorderThickness="1" BorderBrush="#CCC" CornerRadius="4" Padding="0">
+            <ListBox ItemsSource="{Binding ColumnRenames}" 
+                     SelectedItem="{Binding SelectedColumn, Mode=TwoWay}" 
+                     Height="340"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#FFCCE5FF"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,2,0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="2*" />
+                                <ColumnDefinition Width="3*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding Original}" VerticalAlignment="Center" Padding="4,2"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBox Text="{Binding NewName, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}" 
+                                         Width="180" Margin="0,0,0,0"/>
+                                <TextBlock Text="{Binding Error}" Foreground="Red" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+        <TextBlock Text="{Binding ErrorMessage}" Foreground="Red" FontWeight="Bold" Margin="0,10,0,0"/>
+    </StackPanel>
+</UserControl>
