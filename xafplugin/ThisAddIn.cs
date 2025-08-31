@@ -9,8 +9,6 @@ using xafplugin.Modules;
 using xafplugin.Ribbon;
 using Excel = Microsoft.Office.Interop.Excel;
 
-[assembly: NeutralResourcesLanguage("en-US")]
-
 namespace xafplugin
 {
 
