@@ -50,6 +50,7 @@ jobs:
           /p:SignManifests=true
           /p:ManifestCertificateThumbprint=${{ steps.cert.outputs.thumb }}
           /p:PublishDir="$((Resolve-Path .).Path)\xafplugin\publish\"
+          /p:ManifestTimestampUrl=http://timestamp.digicert.com
 
       - name: List publish output
         shell: pwsh
