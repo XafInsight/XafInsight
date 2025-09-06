@@ -1,2 +1,2 @@
-# Force binary handling: no CRLF/LF conversion for ClickOnce payload
+# binary
 /clickonce/** -text
