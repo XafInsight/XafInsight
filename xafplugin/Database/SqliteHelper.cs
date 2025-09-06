@@ -1,7 +1,7 @@
-﻿using System;
+﻿using Microsoft.Data.Sqlite;
+using System;
 using System.Data;
 using System.IO;
-using Microsoft.Data.Sqlite;
 
 namespace xafplugin.Database
 {
@@ -202,7 +202,6 @@ namespace xafplugin.Database
 
             if (!File.Exists(_dbPath))
             {
-                // Create empty file so ReadWriteCreate can open it without native helpers.
                 try
                 {
                     using (File.Create(_dbPath)) { }

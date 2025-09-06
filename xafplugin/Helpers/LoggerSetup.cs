@@ -14,33 +14,33 @@ namespace xafplugin.Helpers
 
             string logFolder = Globals.ThisAddIn.Config.LogPath;
 
-            if(string.IsNullOrWhiteSpace(logFolder) || !Directory.Exists(logFolder))
+            if (string.IsNullOrWhiteSpace(logFolder) || !Directory.Exists(logFolder))
             {
                 throw new InvalidOperationException("LogPath is not configured.");
             }
 
             // Bestandslog target
             var logfile = new FileTarget("logfile")
-        {
-            FileName = Path.Combine(logFolder, "log.txt"),
-            Layout = "${longdate}|${level:uppercase=true}|${_logger}|${message} ${exception:format=toString,stacktrace}",
-            ArchiveEvery = FileArchivePeriod.Day,
-            ArchiveFileName = Path.Combine(logFolder, "log.txt"),
-            ArchiveSuffixFormat = "_yyyyMMdd",  // Bijv. log_20250718.txt
-            MaxArchiveFiles = 7,
-            KeepFileOpen = false,
-            Encoding = System.Text.Encoding.UTF8
-        };
+            {
+                FileName = Path.Combine(logFolder, "log.txt"),
+                Layout = "${longdate}|${level:uppercase=true}|${_logger}|${message} ${exception:format=toString,stacktrace}",
+                ArchiveEvery = FileArchivePeriod.Day,
+                ArchiveFileName = Path.Combine(logFolder, "log.txt"),
+                ArchiveSuffixFormat = "_yyyyMMdd",  // Bijv. log_20250718.txt
+                MaxArchiveFiles = 7,
+                KeepFileOpen = false,
+                Encoding = System.Text.Encoding.UTF8
+            };
 
 
             // Visual Studio Output venster target (alleen in debug)
 #if DEBUG
-        var debugOutput = new DebugTarget("debug")
-        {
-            Layout = "${longdate}|${level}|${_logger}|${message} ${exception:format=toString}"
-        };
-        config.AddTarget(debugOutput);
-        config.AddRule(LogLevel.Debug, LogLevel.Fatal, debugOutput);
+            var debugOutput = new DebugTarget("debug")
+            {
+                Layout = "${longdate}|${level}|${_logger}|${message} ${exception:format=toString}"
+            };
+            config.AddTarget(debugOutput);
+            config.AddRule(LogLevel.Debug, LogLevel.Fatal, debugOutput);
 #endif
 
             config.AddTarget(logfile);

@@ -2,11 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Data.SqlTypes;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using xafplugin.Database;
 using xafplugin.Helpers;
@@ -225,7 +221,7 @@ namespace xafplugin.ViewModels
                 var usedMappings = new HashSet<string>();
 
                 var columnMappingList = _settings.Get(_env.FileHash)?.ColumnMappings;
-                if(columnMappingList != null || columnMappingList.Count >0)
+                if (columnMappingList != null || columnMappingList.Count > 0)
                 {
                     var colCount = data.GetLength(1);
                     for (int col = 0; col < colCount; col++)

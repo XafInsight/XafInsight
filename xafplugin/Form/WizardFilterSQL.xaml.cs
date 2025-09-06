@@ -40,7 +40,7 @@ namespace xafplugin.Form
             InitializeComponent();
             _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
             DataContext = _viewModel;
-           
+
             _viewModel.RequestClose += (s, result) =>
             {
                 DialogResult = result;
@@ -50,17 +50,17 @@ namespace xafplugin.Form
             // Configure RichTextBox defaults
             SqlRichTextBox.AcceptsReturn = true;
             SqlRichTextBox.Document.LineHeight = 1.0; // Tighter line spacing
-            
+
             string defaultSql =
                 "    WHERE {condition}\r\n";
             SqlRichTextBox.Document.Blocks.Clear();
-            
+
             // Create a single paragraph with consistent formatting
             Paragraph paragraph = new Paragraph(new Run(defaultSql));
             paragraph.Margin = new Thickness(0); // Remove paragraph spacing
             paragraph.LineHeight = 1.0;
             SqlRichTextBox.Document.Blocks.Add(paragraph);
-            
+
             HighlightSql();
 
             SqlRichTextBox.PreviewMouseDoubleClick += SqlRichTextBox_PreviewMouseDoubleClick;
@@ -82,31 +82,31 @@ namespace xafplugin.Form
                         ApplySelectedSuggestion();
                         e.Handled = true;
                         return;
-                        
+
                     case Key.Down:
                         // If nothing is selected, select the first item
                         if (SuggestionsListBox.SelectedIndex == -1)
                             SuggestionsListBox.SelectedIndex = 0;
                         else if (SuggestionsListBox.SelectedIndex < _viewModel.Suggestions.Count - 1)
                             SuggestionsListBox.SelectedIndex++; // Move to next item
-                        
+
                         // Ensure the selected item is visible
                         SuggestionsListBox.ScrollIntoView(SuggestionsListBox.SelectedItem);
                         e.Handled = true;
                         return;
-                        
+
                     case Key.Up:
                         // If nothing is selected, select the last item
                         if (SuggestionsListBox.SelectedIndex == -1)
                             SuggestionsListBox.SelectedIndex = _viewModel.Suggestions.Count - 1;
                         else if (SuggestionsListBox.SelectedIndex > 0)
                             SuggestionsListBox.SelectedIndex--; // Move to previous item
-                        
+
                         // Ensure the selected item is visible
                         SuggestionsListBox.ScrollIntoView(SuggestionsListBox.SelectedItem);
                         e.Handled = true;
                         return;
-                        
+
                     case Key.Enter:
                         if (SuggestionsListBox.SelectedIndex >= 0)
                         {
@@ -116,7 +116,7 @@ namespace xafplugin.Form
                         }
                         // If no suggestion is selected, fall through to normal Enter handling
                         break;
-                        
+
                     case Key.Escape:
                         // Hide suggestions
                         _viewModel.Suggestions.Clear();
@@ -129,30 +129,30 @@ namespace xafplugin.Form
             if (e.Key == Key.Enter)
             {
                 TextPointer caretPos = SqlRichTextBox.CaretPosition;
-                
+
                 string text = new TextRange(SqlRichTextBox.Document.ContentStart, SqlRichTextBox.Document.ContentEnd).Text;
                 int caretOffset = new TextRange(SqlRichTextBox.Document.ContentStart, caretPos).Text.Length;
-                
+
                 int lineStart = text.LastIndexOf('\n', Math.Max(0, caretOffset - 1)) + 1;
                 int indentLength = 0;
-                
-                while (lineStart + indentLength < text.Length && 
+
+                while (lineStart + indentLength < text.Length &&
                        (text[lineStart + indentLength] == ' ' || text[lineStart + indentLength] == '\t'))
                 {
                     indentLength++;
                 }
-                
+
                 caretPos.InsertLineBreak();
-                
+
                 if (indentLength > 0)
                 {
                     string indent = text.Substring(lineStart, indentLength);
                     caretPos = SqlRichTextBox.CaretPosition; // Get updated caret position
                     caretPos.InsertTextInRun(indent);
                 }
-                
-                e.Handled = true; 
-                
+
+                e.Handled = true;
+
                 NormalizeDocument();
             }
         }
@@ -165,24 +165,24 @@ namespace xafplugin.Form
         {
             if (_isUpdating)
                 return;
-            
+
             _isUpdating = true;
             try
             {
                 int caretOffset = new TextRange(SqlRichTextBox.Document.ContentStart, SqlRichTextBox.CaretPosition).Text.Length;
-                
+
                 string fullText = new TextRange(SqlRichTextBox.Document.ContentStart, SqlRichTextBox.Document.ContentEnd).Text;
-                
+
                 SqlRichTextBox.Document.Blocks.Clear();
-                
-               
+
+
                 Paragraph paragraph = new Paragraph(new Run(fullText));
-                paragraph.Margin = new Thickness(0); 
+                paragraph.Margin = new Thickness(0);
                 paragraph.LineHeight = 1.0;
                 SqlRichTextBox.Document.Blocks.Add(paragraph);
-                
+
                 HighlightSql();
-                
+
                 TextPointer newCaret = GetTextPointerAtOffset(caretOffset);
                 if (newCaret != null)
                 {

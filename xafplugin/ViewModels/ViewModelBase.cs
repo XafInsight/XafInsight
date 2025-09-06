@@ -1,11 +1,5 @@
 ﻿using NLog;
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using xafplugin.Database;
 using xafplugin.Helpers;
 using xafplugin.Interfaces;
 using xafplugin.Modules;

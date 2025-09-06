@@ -1,6 +1,5 @@
 ﻿using NLog;
 using System;
-using System.Windows;
 using System.Windows.Controls;
 using xafplugin.Interfaces;
 using xafplugin.Modules;

@@ -1,8 +1,8 @@
-﻿using NLog;
+﻿using Microsoft.Data.Sqlite;
+using NLog;
 using System;
 using System.Collections.Generic;
 using System.Data;
-using Microsoft.Data.Sqlite;
 using System.Linq;
 using xafplugin.Interfaces;
 using xafplugin.Modules;
@@ -51,7 +51,7 @@ namespace xafplugin.Database
                         throw new InvalidOperationException("Injected SqliteConnection is not open.");
                     return _externalConnection;
                 }
-                return _helper.Connection; 
+                return _helper.Connection;
             }
         }
 

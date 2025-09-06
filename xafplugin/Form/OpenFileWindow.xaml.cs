@@ -1,14 +1,11 @@
 ﻿using NLog;
 using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using xafplugin.Helpers;
-using xafplugin.Modules;
 using xafplugin.ViewModels;
 
 namespace xafplugin.Form

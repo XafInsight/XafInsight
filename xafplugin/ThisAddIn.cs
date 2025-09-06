@@ -1,9 +1,7 @@
-﻿using Microsoft.Office.Core;
-using NLog;
+﻿using NLog;
 using SQLitePCL;
 using System;
 using System.IO;
-using System.Resources;
 using System.Windows;
 using xafplugin.Helpers;
 using xafplugin.Modules;
@@ -42,7 +40,8 @@ namespace xafplugin
                 Batteries_V2.Init();
                 _config = ConfigLoader.Load();
                 LoggerSetup.Configure();
-            } catch (Exception ex)
+            }
+            catch (Exception ex)
             {
                 MessageBox.Show("Fout bij het laden van de configuratie of het instellen van de logger: " + ex.Message + "\nneem contact op met applicatie beheerder", "Fout", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
@@ -57,8 +56,8 @@ namespace xafplugin
             this.Application.WorkbookActivate += Application_WorkbookActivate;
             this.Application.WorkbookDeactivate += Application_WorkbookDeactivate;
 
-            
-            
+
+
             // verwijder dit naar window. 
             string tempDir = Path.GetTempPath();
             string tempFile = Path.Combine(tempDir, "XafInsight_" + Guid.NewGuid().ToString() + ".sqlite");

@@ -1,7 +1,6 @@
 ﻿using Newtonsoft.Json;
 using NLog;
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -10,7 +9,6 @@ using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Forms.Integration;
 using System.Windows.Interop;
-using xafplugin.Database;
 using xafplugin.Form;
 using xafplugin.Helpers;
 using xafplugin.Modules;
@@ -28,7 +26,7 @@ namespace xafplugin.Ribbon
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
         private readonly MessageBoxService _dialog = new MessageBoxService();
 
-        private Window _connectWindow; 
+        private Window _connectWindow;
         private Window _relationWindow;
         private Window _tableWindow;
         private Window _columnMappingWindow;
@@ -457,7 +455,7 @@ namespace xafplugin.Ribbon
             }
         }
 
-        
+
 
 
         #endregion

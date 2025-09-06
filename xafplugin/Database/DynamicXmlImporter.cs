@@ -1,11 +1,11 @@
-﻿using System;
+﻿using Microsoft.Data.Sqlite;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
-using Microsoft.Data.Sqlite;
 
 namespace xafplugin.Database
 {
@@ -22,11 +22,11 @@ namespace xafplugin.Database
         private readonly HashSet<string> _existingTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, HashSet<string>> _tableCols = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, long> _tableIdCounters = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        
+
         // Track relationships for later foreign key creation
-        private readonly Dictionary<string, List<Tuple<string, string>>> _pendingRelationships = 
+        private readonly Dictionary<string, List<Tuple<string, string>>> _pendingRelationships =
             new Dictionary<string, List<Tuple<string, string>>>(StringComparer.OrdinalIgnoreCase);
-        
+
         private sealed class StackEntry
         {
             public string LocalName;
@@ -53,7 +53,7 @@ namespace xafplugin.Database
 
             // Temporarily disable foreign keys during import
             ExecuteNonQuery("PRAGMA foreign_keys=OFF;");
-            
+
             Stack<StackEntry> stack = new Stack<StackEntry>();
             _insertCount = 0;
             _currentTransaction = _conn.BeginTransaction();
@@ -123,7 +123,7 @@ namespace xafplugin.Database
                                     if (!string.IsNullOrEmpty(gpRowId))
                                     {
                                         parentData["_ParentId"] = gpRowId;
-                                        
+
                                         // Track relationship for later foreign key creation
                                         if (!string.IsNullOrEmpty(gpTable))
                                         {
@@ -134,7 +134,7 @@ namespace xafplugin.Database
                                     {
                                         parentData["_ParentId"] = DBNull.Value;
                                     }
-                                    
+
                                     parentData["_Path"] = parent.Path;
                                     parentData["_NS"] = parent.NamespaceUri;
 
@@ -165,7 +165,7 @@ namespace xafplugin.Database
                                 if (!string.IsNullOrEmpty(parentRowId))
                                 {
                                     baseData["_ParentId"] = parentRowId;
-                                    
+
                                     // Track relationship for later foreign key creation
                                     if (!string.IsNullOrEmpty(parentTable))
                                     {
@@ -176,10 +176,10 @@ namespace xafplugin.Database
                                 {
                                     baseData["_ParentId"] = DBNull.Value;
                                 }
-                                
+
                                 baseData["_Path"] = path;
                                 baseData["_NS"] = ns;
-                                
+
                                 foreach (KeyValuePair<string, string> kv in attrs)
                                     baseData[NormalizeName(kv.Key)] = kv.Value;
 
@@ -224,10 +224,10 @@ namespace xafplugin.Database
                     _currentTransaction.Dispose();
                     _currentTransaction = null;
                 }
-                
+
                 // Add foreign key constraints in a second pass
                 AddForeignKeyConstraints();
-                
+
                 // Re-enable foreign keys after import
                 ExecuteNonQuery("PRAGMA foreign_keys=ON;");
             }
@@ -258,14 +258,14 @@ namespace xafplugin.Database
                 list = new List<Tuple<string, string>>();
                 _pendingRelationships[childTable] = list;
             }
-            
+
             // Only add if not already tracked
             if (!list.Any(r => r.Item1 == parentTable && r.Item2 == columnName))
             {
                 list.Add(Tuple.Create(parentTable, columnName));
             }
         }
-        
+
         private void AddForeignKeyConstraints()
         {
             // Create a new transaction for the structure changes
@@ -278,16 +278,16 @@ namespace xafplugin.Database
                     {
                         string childTable = entry.Key;
                         var relationships = entry.Value;
-                        
+
                         // Skip if no relationships to add
                         if (relationships.Count == 0)
                             continue;
-                            
+
                         // Get list of all columns in the table
                         List<string> columnDefinitions = new List<string>();
                         List<string> columnNames = new List<string>();
                         Dictionary<string, string> columnTypes = new Dictionary<string, string>();
-                        
+
                         using (var cmd = new SqliteCommand($"PRAGMA table_info([{childTable}])", _conn, transaction))
                         using (var reader = cmd.ExecuteReader())
                         {
@@ -298,56 +298,56 @@ namespace xafplugin.Database
                                 int notNull = Convert.ToInt32(reader["notnull"]);
                                 string defaultValue = reader["dflt_value"]?.ToString();
                                 int isPk = Convert.ToInt32(reader["pk"]);
-                                
+
                                 columnNames.Add(colName);
                                 columnTypes[colName] = colType;
-                                
+
                                 string colDef = $"[{colName}] {colType}";
                                 if (notNull == 1)
                                     colDef += " NOT NULL";
-                                    
+
                                 if (!string.IsNullOrEmpty(defaultValue))
                                     colDef += $" DEFAULT {defaultValue}";
-                                    
+
                                 if (isPk == 1)
                                     colDef += " PRIMARY KEY";
-                                    
+
                                 columnDefinitions.Add(colDef);
                             }
                         }
-                        
+
                         // Add foreign key definitions
                         foreach (var rel in relationships)
                         {
                             string parentTable = rel.Item1;
                             string columnName = rel.Item2;
-                            
+
                             columnDefinitions.Add($"FOREIGN KEY ([{columnName}]) REFERENCES [{parentTable}]([_Id]) ON DELETE CASCADE");
                         }
-                        
+
                         // Create temporary table with foreign keys
                         string tempTableName = $"{childTable}_temp";
                         string createTempSql = $"CREATE TABLE [{tempTableName}] ({string.Join(", ", columnDefinitions)});";
                         ExecuteNonQuery(createTempSql, transaction);
-                        
+
                         // Copy data
                         string columns = string.Join(", ", columnNames.Select(c => $"[{c}]"));
                         string copyDataSql = $"INSERT INTO [{tempTableName}] ({columns}) SELECT {columns} FROM [{childTable}];";
                         ExecuteNonQuery(copyDataSql, transaction);
-                        
+
                         // Drop old table
                         string dropSql = $"DROP TABLE [{childTable}];";
                         ExecuteNonQuery(dropSql, transaction);
-                        
+
                         // Rename new table
                         string renameSql = $"ALTER TABLE [{tempTableName}] RENAME TO [{childTable}];";
                         ExecuteNonQuery(renameSql, transaction);
-                        
+
                         // Recreate indexes
                         string indexSql = $"CREATE INDEX IF NOT EXISTS [ix_{childTable}__parent] ON [{childTable}] ([_ParentId]);";
                         ExecuteNonQuery(indexSql, transaction);
                     }
-                    
+
                     transaction.Commit();
                 }
                 catch (Exception ex)
@@ -397,7 +397,7 @@ namespace xafplugin.Database
                 if (!string.IsNullOrEmpty(parentRowId))
                 {
                     baseData["_ParentId"] = parentRowId;
-                    
+
                     // Track relationship for later foreign key creation
                     if (!string.IsNullOrEmpty(parentTable))
                     {
@@ -408,7 +408,7 @@ namespace xafplugin.Database
                 {
                     baseData["_ParentId"] = DBNull.Value;
                 }
-                
+
                 baseData["_Path"] = cur.Path;
                 baseData["_NS"] = cur.NamespaceUri;
 
@@ -443,7 +443,7 @@ namespace xafplugin.Database
                 cmd.ExecuteNonQuery();
             }
         }
-        
+
         private void ExecuteNonQuery(string sql, SqliteTransaction transaction)
         {
             using (var cmd = CreateCommand(sql, transaction))
@@ -507,7 +507,7 @@ namespace xafplugin.Database
 
                 string alterSql = $"ALTER TABLE [{table}] ADD COLUMN [{col}] TEXT;";
                 ExecuteNonQuery(alterSql);
-                
+
                 set.Add(col);
             }
         }
@@ -567,7 +567,7 @@ namespace xafplugin.Database
             {
                 _tableIdCounters[table] = 1;
             }
-            
+
             return _tableIdCounters[table]++;
         }
 
@@ -679,7 +679,7 @@ namespace xafplugin.Database
                     {
                         _existingTables.Clear();
                     }
-                    
+
                     if (_tableCols != null)
                     {
                         // Clear each nested HashSet before clearing the dictionary
@@ -689,12 +689,12 @@ namespace xafplugin.Database
                         }
                         _tableCols.Clear();
                     }
-                    
+
                     if (_tableIdCounters != null)
                     {
                         _tableIdCounters.Clear();
                     }
-                    
+
                     if (_pendingRelationships != null)
                     {
                         // Clear each nested List before clearing the dictionary
@@ -704,7 +704,7 @@ namespace xafplugin.Database
                         }
                         _pendingRelationships.Clear();
                     }
-                    
+
                     // Force garbage collection to reclaim memory immediately
                     GC.Collect();
                     GC.WaitForPendingFinalizers();

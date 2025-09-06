@@ -2,12 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 using xafplugin.Database;
 using xafplugin.Interfaces;
 
@@ -58,7 +54,7 @@ namespace xafplugin.ViewModels
             _columns = new ObservableCollection<string>(columns ?? Enumerable.Empty<string>());
 
         }
-        public WizardFilterViewModel(IEnvironmentService environment , ISettingsProvider settingsProvider, IMessageBoxService dialog, IEnumerable<string> columns = null) : base(environment, settingsProvider, dialog)
+        public WizardFilterViewModel(IEnvironmentService environment, ISettingsProvider settingsProvider, IMessageBoxService dialog, IEnumerable<string> columns = null) : base(environment, settingsProvider, dialog)
         {
             _logger.Info("Initialisatie van ColumnMappingViewModel gestart.");
             _columns = new ObservableCollection<string>(columns ?? Enumerable.Empty<string>());
@@ -73,7 +69,7 @@ namespace xafplugin.ViewModels
 
         public bool SetSQLSyntax(string filter)
         {
-           
+
             var result = resultString(filter);
 
             if (!IsValid(result))
@@ -84,7 +80,7 @@ namespace xafplugin.ViewModels
             {
                 return false;
             }
-          
+
             _sqlText = result;
             return true;
         }
@@ -92,7 +88,7 @@ namespace xafplugin.ViewModels
 
         private bool IsValid(string sqlText)
         {
-            if(sqlText.Contains("{") || sqlText.Contains("}"))
+            if (sqlText.Contains("{") || sqlText.Contains("}"))
             {
                 return false;
             }

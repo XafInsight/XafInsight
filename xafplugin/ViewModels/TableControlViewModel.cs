@@ -4,7 +4,6 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Forms;
 using xafplugin.Database;
-using xafplugin.Helpers;
 using xafplugin.Interfaces;
 using xafplugin.Modules;
 

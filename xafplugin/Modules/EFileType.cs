@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace xafplugin.Modules
+﻿namespace xafplugin.Modules
 {
     public enum EFileType
     {
