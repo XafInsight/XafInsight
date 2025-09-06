@@ -35,7 +35,7 @@
     <IsWebBootstrapper>True</IsWebBootstrapper>
     <BootstrapperEnabled>true</BootstrapperEnabled>
     <PublishUrl>publish\</PublishUrl>
-    <InstallUrl>https://github.com/XafInsight/XafInsight/clickonce/xafplugin.vsto/</InstallUrl>
+    <InstallUrl>https://XafInsight.github.io/XafInsight/clickonce/</InstallUrl>
     <TargetCulture>en</TargetCulture>
     <ApplicationVersion>1.0.0.3</ApplicationVersion>
     <AutoIncrementApplicationRevision>true</AutoIncrementApplicationRevision>
@@ -416,13 +416,9 @@
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
     <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
   </PropertyGroup>
-  <PropertyGroup>
+  <PropertyGroup Condition="'$(CI)' != 'true'">
     <SignManifests>true</SignManifests>
-  </PropertyGroup>
-  <PropertyGroup>
     <ManifestKeyFile>xafplugin_TemporaryKey.pfx</ManifestKeyFile>
-  </PropertyGroup>
-  <PropertyGroup>
     <ManifestCertificateThumbprint>77EE92C7EAC1165A41B00784130890BC829995FC</ManifestCertificateThumbprint>
   </PropertyGroup>
   <!-- Include the build rules for a C# project. -->
