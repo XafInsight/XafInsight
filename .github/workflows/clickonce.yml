@@ -75,6 +75,20 @@ jobs:
           New-Item -ItemType Directory -Force "site/clickonce" | Out-Null
           Copy-Item "xafplugin\publish\*" "site\clickonce" -Recurse -Force
 
+      # 3a) Forceer binaire bytes (geen CRLF/LF conversie) voor alles onder /clickonce/
+      - name: Add .gitattributes to preserve file bytes
+        shell: pwsh
+        run: |
+          @"
+# Force binary handling: no CRLF/LF conversion for ClickOnce payload
+/clickonce/** -text
+"@ | Set-Content -Path "site/.gitattributes" -Encoding ASCII
+
+      # 3b) Zet .nojekyll zodat GitHub Pages niets probeert te verwerken
+      - name: Disable Jekyll on GitHub Pages
+        shell: pwsh
+        run: New-Item -ItemType File -Path "site/.nojekyll" -Force | Out-Null
+
       - name: Generate index.html
         shell: pwsh
         run: |
