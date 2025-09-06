@@ -1,0 +1,74 @@
+name: Build & Publish VSTO (Releases + Pages)
+
+on:
+  push:
+    tags:
+      - 'v*'          # nog steeds alleen tags die beginnen met v
+    branches:
+      - main          # maar alleen als die tag op main staat
+  workflow_dispatch:
+
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore NuGet
+        run: nuget restore xafplugin.sln
+
+      - name: Build Release
+        run: msbuild xafplugin.sln /p:Configuration=Release
+
+      # BELANGRIJK: publish naar de PublishUrl uit je csproj (.\publish\)
+      - name: ClickOnce Publish
+        run: msbuild xafplugin\xafplugin.csproj /t:Publish /p:Configuration=Release
+
+      # Zet volledige publish-output naar docs/clickonce voor Pages
+      - name: Prepare publish folder for Pages
+        shell: pwsh
+        run: |
+          if (Test-Path docs\clickonce) { Remove-Item -Recurse -Force docs\clickonce }
+          New-Item -ItemType Directory -Force docs\clickonce | Out-Null
+          Copy-Item "xafplugin\publish\*" "docs\clickonce" -Recurse -Force
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      # Verzamel Release-assets vanaf jouw publish\ (NIET app.publish\)
+      - name: Collect release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item "xafplugin\publish\xafplugin.vsto" "out\xafplugin.vsto" -Force
+          if (Test-Path "xafplugin\publish\setup.exe") {
+            Copy-Item "xafplugin\publish\setup.exe" "out\setup.exe" -Force
+          }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          files: |
+            out/xafplugin.vsto
+            out/setup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
