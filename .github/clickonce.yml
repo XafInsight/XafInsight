@@ -1,17 +1,19 @@
-name: Build & Publish VSTO (Releases + Pages)
+name: Build & Publish VSTO (main + testing to GitHub Pages)
+
+permissions:
+  contents: write  # nodig voor push naar gh-pages
 
 on:
   push:
-    tags:
-      - 'v*'          # nog steeds alleen tags die beginnen met v
     branches:
-      - main          # maar alleen als die tag op main staat
+      - main
+      - testing
   workflow_dispatch:
 
-
 jobs:
-  build:
+  build-and-deploy:
     runs-on: windows-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,54 +23,59 @@ jobs:
       - name: Restore NuGet
         run: nuget restore xafplugin.sln
 
-      - name: Build Release
-        run: msbuild xafplugin.sln /p:Configuration=Release
-
-      # BELANGRIJK: publish naar de PublishUrl uit je csproj (.\publish\)
-      - name: ClickOnce Publish
-        run: msbuild xafplugin\xafplugin.csproj /t:Publish /p:Configuration=Release
-
-      # Zet volledige publish-output naar docs/clickonce voor Pages
-      - name: Prepare publish folder for Pages
+      - name: Determine branch and URLs
+        id: meta
         shell: pwsh
         run: |
-          if (Test-Path docs\clickonce) { Remove-Item -Recurse -Force docs\clickonce }
-          New-Item -ItemType Directory -Force docs\clickonce | Out-Null
-          Copy-Item "xafplugin\publish\*" "docs\clickonce" -Recurse -Force
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs
-
-      # Verzamel Release-assets vanaf jouw publish\ (NIET app.publish\)
-      - name: Collect release assets
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item "xafplugin\publish\xafplugin.vsto" "out\xafplugin.vsto" -Force
-          if (Test-Path "xafplugin\publish\setup.exe") {
-            Copy-Item "xafplugin\publish\setup.exe" "out\setup.exe" -Force
+          $branch = "${{ github.ref_name }}"
+          $base = "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          if ($branch -eq "testing") {
+            $path = "clickonce-testing"
+            $install = "$base/$path/"
+            echo "publish_target=$path"        >> $env:GITHUB_OUTPUT
+            echo "install_url=$install"        >> $env:GITHUB_OUTPUT
+            echo "override_urls=true"          >> $env:GITHUB_OUTPUT
+          } elseif ($branch -eq "main") {
+            $path = "clickonce"
+            # main gebruikt InstallUrl/UpdateUrl uit csproj (productie)
+            echo "publish_target=$path"        >> $env:GITHUB_OUTPUT
+            echo "override_urls=false"         >> $env:GITHUB_OUTPUT
+          } else {
+            throw "Unexpected branch: $branch"
           }
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: false
-          prerelease: false
-          files: |
-            out/xafplugin.vsto
-            out/setup.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Build + ClickOnce Publish
+      # testing → override InstallUrl/UpdateUrl naar /clickonce-testing/
+      - name: ClickOnce Publish (testing)
+        if: steps.meta.outputs.override_urls == 'true'
+        run: >
+          msbuild xafplugin\xafplugin.csproj
+          /t:Publish /p:Configuration=Release
+          /p:AutoIncrementApplicationRevision=true
+          /p:InstallUrl=${{ steps.meta.outputs.install_url }}
+          /p:UpdateUrl=${{ steps.meta.outputs.install_url }}
 
-  deploy-pages:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      # main → gebruik je csproj (productie InstallUrl), geen override
+      - name: ClickOnce Publish (main)
+        if: steps.meta.outputs.override_urls != 'true'
+        run: >
+          msbuild xafplugin\xafplugin.csproj
+          /t:Publish /p:Configuration=Release
+          /p:AutoIncrementApplicationRevision=true
+
+      # Maak een tijdelijke site-map met alléén de juiste subfolder
+      - name: Prepare site folder for Pages
+        shell: pwsh
+        run: |
+          if (Test-Path site) { Remove-Item -Recurse -Force site }
+          New-Item -ItemType Directory -Force site\${{ steps.meta.outputs.publish_target }} | Out-Null
+          Copy-Item "xafplugin\publish\*" "site\${{ steps.meta.outputs.publish_target }}" -Recurse -Force
+
+      # Deploy naar gh-pages en bewaar bestaande files (zodat beide paden naast elkaar bestaan)
+      - name: Deploy to gh-pages (keep existing files)
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: site
+          publish_branch: gh-pages
+          keep_files: true
