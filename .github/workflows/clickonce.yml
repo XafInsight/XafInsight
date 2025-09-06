@@ -1,7 +1,7 @@
 name: Build & Publish VSTO (main → GitHub Pages)
 
 permissions:
-  contents: write  # push naar gh-pages
+  contents: write  # push naar gh-pages + releases
 
 on:
   push:
@@ -32,7 +32,6 @@ jobs:
           $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.CODESIGN_PFX_B64 }}"))
 
-          # Valideer wachtwoord / PFX
           certutil -p "${{ secrets.CODESIGN_PFX_PASSWORD }}" -dump "$pfxPath" | Out-Null
 
           $sec = ConvertTo-SecureString "${{ secrets.CODESIGN_PFX_PASSWORD }}" -AsPlainText -Force
@@ -75,6 +74,23 @@ jobs:
           New-Item -ItemType Directory -Force "site/clickonce" | Out-Null
           Copy-Item "xafplugin\publish\*" "site\clickonce" -Recurse -Force
 
+      - name: Generate index.html
+        shell: pwsh
+        run: |
+          $html = @"
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>XafInsight ClickOnce</title>
+<h1>XafInsight ClickOnce deployment</h1>
+<ul>
+  <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>
+  <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>
+  <li><a href="xafplugin.application">xafplugin.application</a> (ClickOnce manifest)</li>
+</ul>
+"@
+          Set-Content -Path "site/clickonce/index.html" -Value $html -Encoding UTF8
+
       - name: Deploy to gh-pages (keep existing files)
         uses: peaceiris/actions-gh-pages@v3
         with:
@@ -82,3 +98,47 @@ jobs:
           publish_dir: site
           publish_branch: gh-pages
           keep_files: true
+
+      # 4) Verzamelen van release-assets (alleen kopiëren wat bestaat)
+      - name: Collect release assets
+        shell: pwsh
+        run: |
+          if (Test-Path out) { Remove-Item -Recurse -Force out }
+          New-Item -ItemType Directory -Force out | Out-Null
+
+          $src = "xafplugin\publish"
+          $files = @(
+            "xafplugin.vsto",
+            "setup.exe",
+            "xafplugin.application"
+          )
+          foreach ($f in $files) {
+            $p = Join-Path $src $f
+            if (Test-Path $p) { Copy-Item $p "out\" -Force }
+          }
+
+          # Laat ook de map Application Files als zip achter (handig voor debug/archief)
+          $appFiles = Join-Path $src "Application Files"
+          if (Test-Path $appFiles) {
+            Add-Type -A System.IO.Compression.FileSystem
+            $zip = Join-Path (Resolve-Path out) "application-files.zip"
+            if (Test-Path $zip) { Remove-Item $zip -Force }
+            [System.IO.Compression.ZipFile]::CreateFromDirectory($appFiles, $zip)
+          }
+
+      # 5) Maak/Update een Release voor deze build
+      - name: Create GitHub Release for build
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: "Build ${{ github.run_number }} (${% raw %}{{ github.sha }}{% endraw %})"
+          draft: false
+          prerelease: false
+          files: |
+            out/xafplugin.vsto
+            out/setup.exe
+            out/xafplugin.application
+            out/application-files.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
