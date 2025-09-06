@@ -3,8 +3,11 @@ name: Build & Publish VSTO (Releases + Pages)
 on:
   push:
     tags:
-      - 'v*'         # bv. v1.0.0
+      - 'v*'          # nog steeds alleen tags die beginnen met v
+    branches:
+      - main          # maar alleen als die tag op main staat
   workflow_dispatch:
+
 
 jobs:
   build:
