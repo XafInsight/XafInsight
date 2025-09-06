@@ -52,36 +52,81 @@ jobs:
           /p:PublishDir="$((Resolve-Path .).Path)\xafplugin\publish\"
           /p:ManifestTimestampUrl=http://timestamp.digicert.com
 
-      # 2b) Versie uit manifest halen (ClickOnce publish version)
-      - name: Extract ClickOnce version from manifest
+      # (Nieuw) Toon publish-output direct na publish voor debug
+      - name: List publish output (after publish)
+        shell: pwsh
+        run: |
+          Write-Host "Workspace: $((Resolve-Path .).Path)"
+          if (Test-Path "xafplugin\publish") {
+            Write-Host "Publish folder content:"
+            Get-ChildItem -Recurse -Force "xafplugin\publish" | ForEach-Object { Write-Host $_.FullName }
+          } else {
+            Write-Host "Publish folder not found."
+            Write-Host "Fallback check (bin\Release\app.publish):"
+            if (Test-Path "xafplugin\bin\Release\app.publish") {
+              Get-ChildItem -Recurse -Force "xafplugin\bin\Release\app.publish" | ForEach-Object { Write-Host $_.FullName }
+            }
+          }
+
+      # 2b) Versie uit VSTO-manifest halen (Excel add-in: geen .application)
+      - name: Extract ClickOnce version from VSTO
         id: ver
         shell: pwsh
         run: |
-          $app = "xafplugin\publish\xafplugin.application"
-          $vsto = "xafplugin\publish\xafplugin.vsto"
-          $version = $null
+          function Get-ClickOnceVersion {
+            param([string]$Path)
+            if (-not (Test-Path $Path)) { return $null }
+            [xml]$xml = Get-Content -LiteralPath $Path
 
-          if (Test-Path $app) {
-            [xml]$x = Get-Content $app
-            $version = $x.assemblyIdentity.version
-            if (-not $version) { $version = $x.deployment.assemblyIdentity.version }
-            if (-not $version) { $version = $x.deployment.identity.version }
+            $nsm = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+            $nsm.AddNamespace("asmv1","urn:schemas-microsoft-com:asm.v1")
+            $nsm.AddNamespace("asmv2","urn:schemas-microsoft-com:asm.v2")
+            $nsm.AddNamespace("co","urn:schemas-microsoft-com:clickonce.v2")
+            $nsm.AddNamespace("vsto","urn:schemas-microsoft-com:vsto.v4")
+
+            # 1) assemblyIdentity/@version (meest stabiel)
+            $node = $xml.SelectSingleNode("//asmv1:assemblyIdentity", $nsm)
+            if ($node -and $node.version) { return $node.version }
+
+            # 2) clickonce deployment/identity/@version (soms aanwezig)
+            $node = $xml.SelectSingleNode("//co:deployment/co:identity", $nsm)
+            if ($node -and $node.version) { return $node.version }
+
+            # 3) asm.v2 deployment/assemblyIdentity
+            $node = $xml.SelectSingleNode("//asmv2:deployment/asmv1:assemblyIdentity", $nsm)
+            if ($node -and $node.version) { return $node.version }
+
+            return $null
           }
 
-          if (-not $version -and (Test-Path $vsto)) {
-            [xml]$x = Get-Content $vsto
-            $version = $x.assemblyIdentity.version
-            if (-not $version) { $version = $x.deployment.identity.version }
+          $pub = "xafplugin\publish"
+          $fallback = "xafplugin\bin\Release\app.publish"
+
+          # Zoek alleen VSTO recursief (Excel VSTO add-in)
+          $vstoFile = Get-ChildItem $pub -Recurse -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $vstoFile -and (Test-Path $fallback)) {
+            $vstoFile = Get-ChildItem $fallback -Recurse -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
           }
+
+          if (-not $vstoFile) {
+            Write-Host "Kon geen .vsto vinden in $pub of fallback $fallback."
+            if (Test-Path $pub) {
+              Get-ChildItem -Recurse -Force $pub | ForEach-Object { Write-Host $_.FullName }
+            }
+            Write-Error "VSTO manifest (.vsto) niet gevonden."
+            exit 1
+          }
+
+          $version = Get-ClickOnceVersion -Path $vstoFile.FullName
 
           if (-not $version) {
-            Write-Error "Kon ClickOnce versie niet vinden in manifesten."
+            Write-Host "VSTO manifest: $($vstoFile.FullName)"
+            Write-Error "Kon ClickOnce versie niet vinden in VSTO manifest (namespaces/locatie)."
             exit 1
           }
 
           "CLICKONCE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           "version=$version"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
           Write-Host "ClickOnce version: $version"
 
       # 2c) Guard: faal als versie al bestaat (tag of al op gh-pages)
@@ -99,7 +144,7 @@ jobs:
             exit 1
           }
 
-          # 2) gh-pages check
+          # 2) gh-pages check — zoek naar een Application Files pad dat deze versie bevat
           try {
             git fetch origin gh-pages --depth=1 | Out-Null
             $paths = git ls-tree -r --name-only origin/gh-pages
@@ -116,21 +161,6 @@ jobs:
           }
 
           Write-Host "Version $ver is new — continuing."
-
-      - name: List publish output
-        shell: pwsh
-        run: |
-          Write-Host "Workspace: $((Resolve-Path .).Path)"
-          if (Test-Path "xafplugin\publish") {
-            Write-Host "Publish folder content:"
-            Get-ChildItem -Recurse -Force "xafplugin\publish" | ForEach-Object { Write-Host $_.FullName }
-          } else {
-            Write-Host "Publish folder not found."
-            Write-Host "Fallback check (bin\Release\app.publish):"
-            if (Test-Path "xafplugin\bin\Release\app.publish") {
-              Get-ChildItem -Recurse -Force "xafplugin\bin\Release\app.publish" | ForEach-Object { Write-Host $_.FullName }
-            }
-          }
 
       # 3) Zet volledige publish-output naar /clickonce/ op gh-pages
       - name: Prepare site folder for Pages
@@ -167,7 +197,7 @@ jobs:
             Write-Host "Warning: $certFile not found in repo root."
           }
 
-      # 3d) Genereer index.html en toon versie
+      # 3d) Genereer index.html en toon versie (zonder .application)
       - name: Generate index.html
         shell: pwsh
         run: |
@@ -176,9 +206,13 @@ jobs:
           New-Item -ItemType Directory -Force $dest | Out-Null
 
           $links = @()
-          if (Test-Path "$dest\setup.exe")               { $links += '    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>' }
-          if (Test-Path "$dest\xafplugin.vsto")          { $links += '    <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>' }
-          if (Test-Path "$dest\xafplugin.application")   { $links += '    <li><a href="xafplugin.application">xafplugin.application</a> (ClickOnce manifest)</li>' }
+          if (Test-Path "$dest\setup.exe")      { $links += '    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>' }
+          # VSTO manifest kan willekeurige naam hebben — zoek recursief en link de eerste
+          $vsto = Get-ChildItem $dest -Recurse -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($vsto) {
+            $rel = $vsto.FullName.Substring((Resolve-Path $dest).Path.Length + 1) -replace '\\','/'
+            $links += "    <li><a href=""$rel"">$(Split-Path -Leaf $rel)</a> (add-in manifest)</li>"
+          }
           if (Test-Path "$dest\xafinsight_codesign.cer") { $links += '    <li><a href="xafinsight_codesign.cer">xafinsight_codesign.cer</a> (signing certificate)</li>' }
 
           $htmlLines = @(
@@ -210,7 +244,7 @@ jobs:
           publish_branch: gh-pages
           keep_files: true
 
-      # 4) Verzamelen van release-assets (alleen kopiëren wat bestaat)
+      # 4) Verzamelen van release-assets (recursief zoeken, geen .application)
       - name: Collect release assets
         shell: pwsh
         run: |
@@ -218,15 +252,12 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
 
           $src = "xafplugin\publish"
-          $files = @(
-            "xafplugin.vsto",
-            "setup.exe",
-            "xafplugin.application"
-          )
-          foreach ($f in $files) {
-            $p = Join-Path $src $f
-            if (Test-Path $p) { Copy-Item $p "out\" -Force }
-          }
+
+          $vsto  = Get-ChildItem $src -Recurse -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
+          $setup = Get-ChildItem $src -Recurse -Filter setup.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          if ($vsto)  { Copy-Item $vsto.FullName  "out\xafplugin.vsto" -Force }
+          if ($setup) { Copy-Item $setup.FullName "out\setup.exe"      -Force }
 
           # Laat ook de map Application Files als zip achter (handig voor debug/archief)
           $appFiles = Join-Path $src "Application Files"
@@ -235,15 +266,15 @@ jobs:
             $zip = Join-Path (Resolve-Path out) "application-files.zip"
             if (Test-Path $zip) { Remove-Item $zip -Force }
             [System.IO.Compression.ZipFile]::CreateFromDirectory($appFiles, $zip)
+          }
 
       # 4a) Hernoem assets met versie
       - name: Rename assets with version
         shell: pwsh
         run: |
           $v = "${{ steps.ver.outputs.version }}"
-          if (Test-Path "out\xafplugin.vsto")        { Rename-Item "out\xafplugin.vsto"        "out\xafplugin-$v.vsto" }
-          if (Test-Path "out\setup.exe")             { Rename-Item "out\setup.exe"             "out\setup-$v.exe" }
-          if (Test-Path "out\xafplugin.application") { Rename-Item "out\xafplugin.application" "out\xafplugin-$v.application" }
+          if (Test-Path "out\xafplugin.vsto") { Rename-Item "out\xafplugin.vsto" "out\xafplugin-$v.vsto" }
+          if (Test-Path "out\setup.exe")      { Rename-Item "out\setup.exe"      "out\setup-$v.exe" }
 
       # 4b) Korte SHA voor in de release-naam
       - name: Compute short SHA
@@ -300,7 +331,6 @@ jobs:
           files: |
             out/xafplugin-${{ steps.ver.outputs.version }}.vsto
             out/setup-${{ steps.ver.outputs.version }}.exe
-            out/xafplugin-${{ steps.ver.outputs.version }}.application
             out/application-files.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
