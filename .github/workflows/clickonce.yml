@@ -68,99 +68,87 @@ jobs:
             }
           }
 
-      # 2b) Versie uit VSTO-manifest halen (Excel add-in: geen .application)
+      # 2b) Versie uit VSTO-manifest halen (strict: .vsto verplicht)
       - name: Extract ClickOnce version from VSTO
         id: ver
         shell: pwsh
         run: |
-          function Get-ClickOnceVersion {
-            param([string]$Path)
-            if (-not (Test-Path $Path)) { return $null }
-            [xml]$xml = Get-Content -LiteralPath $Path
-
-            $nsm = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
-            $nsm.AddNamespace("asmv1","urn:schemas-microsoft-com:asm.v1")
-            $nsm.AddNamespace("asmv2","urn:schemas-microsoft-com:asm.v2")
-            $nsm.AddNamespace("co","urn:schemas-microsoft-com:clickonce.v2")
-            $nsm.AddNamespace("vsto","urn:schemas-microsoft-com:vsto.v4")
-
-            # 1) assemblyIdentity/@version (meest stabiel)
-            $node = $xml.SelectSingleNode("//asmv1:assemblyIdentity", $nsm)
-            if ($node -and $node.version) { return $node.version }
-
-            # 2) clickonce deployment/identity/@version (soms aanwezig)
-            $node = $xml.SelectSingleNode("//co:deployment/co:identity", $nsm)
-            if ($node -and $node.version) { return $node.version }
-
-            # 3) asm.v2 deployment/assemblyIdentity
-            $node = $xml.SelectSingleNode("//asmv2:deployment/asmv1:assemblyIdentity", $nsm)
-            if ($node -and $node.version) { return $node.version }
-
-            return $null
-          }
-
-          $pub = "xafplugin\publish"
-          $fallback = "xafplugin\bin\Release\app.publish"
-
-          # Zoek alleen VSTO recursief (Excel VSTO add-in)
-          $vstoFile = Get-ChildItem $pub -Recurse -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $vstoFile -and (Test-Path $fallback)) {
-            $vstoFile = Get-ChildItem $fallback -Recurse -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
-          }
-
+          $pubDir = "xafplugin\publish"
+      
+          # 1) Zoek .vsto (moet bestaan, anders falen)
+          $vstoFile = Get-ChildItem -Path $pubDir -Recurse -File -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $vstoFile) {
-            Write-Host "Kon geen .vsto vinden in $pub of fallback $fallback."
-            if (Test-Path $pub) {
-              Get-ChildItem -Recurse -Force $pub | ForEach-Object { Write-Host $_.FullName }
+            Write-Host "Publish directory scanned: $pubDir"
+            if (Test-Path $pubDir) {
+              Write-Host "Publish content:"
+              Get-ChildItem -Recurse -Force $pubDir | ForEach-Object { Write-Host $_.FullName }
             }
-            Write-Error "VSTO manifest (.vsto) niet gevonden."
+            Write-Error "VSTO manifest (.vsto) niet gevonden. Build faalt."
             exit 1
           }
-
-          $version = Get-ClickOnceVersion -Path $vstoFile.FullName
-
-          if (-not $version) {
+      
+          # 2) Lees XML en pak version van asmv1:assemblyIdentity (prefix-onafhankelijk)
+          [xml]$xml = Get-Content -LiteralPath $vstoFile.FullName
+      
+          # Probeer eerst de top-level assembly/assemblyIdentity in asm.v1
+          $verNode = $xml.SelectSingleNode(
+            "/*[local-name()='assembly' and namespace-uri()='urn:schemas-microsoft-com:asm.v1']/*[local-name()='assemblyIdentity' and namespace-uri()='urn:schemas-microsoft-com:asm.v1']/@version"
+          )
+      
+          # Fallback: eender welke asm.v1 assemblyIdentity verderop (bv. in RelData)
+          if (-not $verNode) {
+            $verNode = $xml.SelectSingleNode(
+              "//*[local-name()='assemblyIdentity' and namespace-uri()='urn:schemas-microsoft-com:asm.v1']/@version"
+            )
+          }
+      
+          if (-not $verNode -or [string]::IsNullOrWhiteSpace($verNode.Value)) {
             Write-Host "VSTO manifest: $($vstoFile.FullName)"
-            Write-Error "Kon ClickOnce versie niet vinden in VSTO manifest (namespaces/locatie)."
+            Write-Error "Kon geen version-attribuut vinden op asm.v1:assemblyIdentity in .vsto."
             exit 1
           }
-
+      
+          $version = $verNode.Value
+      
           "CLICKONCE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           "version=$version"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+      
+          Write-Host "VSTO: $($vstoFile.FullName)"
           Write-Host "ClickOnce version: $version"
-
-      # 2c) Guard: faal als versie al bestaat (tag of al op gh-pages)
-      - name: Guard - fail if version already released
-        shell: pwsh
-        run: |
-          $ver = "${{ steps.ver.outputs.version }}"
-          if (-not $ver) { Write-Error "No version from manifest"; exit 1 }
-
-          # 1) Tag check
-          git fetch --tags origin | Out-Null
-          $tagExists = git tag -l "v$ver"
-          if ($tagExists) {
-            Write-Error "Tag v$ver already exists. Aborting to avoid duplicate release."
-            exit 1
-          }
-
-          # 2) gh-pages check — zoek naar een Application Files pad dat deze versie bevat
-          try {
-            git fetch origin gh-pages --depth=1 | Out-Null
-            $paths = git ls-tree -r --name-only origin/gh-pages
-            if ($paths) {
-              $re = 'clickonce[\\/]+Application Files[\\/].*' + [regex]::Escape($ver)
-              $match = $paths | Where-Object { $_ -match $re }
-              if ($match) {
-                Write-Error "gh-pages already contains artifacts for version $ver. Aborting."
-                exit 1
-              }
-            }
-          } catch {
-            Write-Host "gh-pages does not exist yet (first deploy) — continuing."
-          }
-
-          Write-Host "Version $ver is new — continuing."
+      
+      
+            # 2c) Guard: faal als versie al bestaat (tag of al op gh-pages)
+            - name: Guard - fail if version already released
+              shell: pwsh
+              run: |
+                $ver = "${{ steps.ver.outputs.version }}"
+                if (-not $ver) { Write-Error "No version from manifest"; exit 1 }
+      
+                # 1) Tag check
+                git fetch --tags origin | Out-Null
+                $tagExists = git tag -l "v$ver"
+                if ($tagExists) {
+                  Write-Error "Tag v$ver already exists. Aborting to avoid duplicate release."
+                  exit 1
+                }
+      
+                # 2) gh-pages check — zoek naar een Application Files pad dat deze versie bevat
+                try {
+                  git fetch origin gh-pages --depth=1 | Out-Null
+                  $paths = git ls-tree -r --name-only origin/gh-pages
+                  if ($paths) {
+                    $re = 'clickonce[\\/]+Application Files[\\/].*' + [regex]::Escape($ver)
+                    $match = $paths | Where-Object { $_ -match $re }
+                    if ($match) {
+                      Write-Error "gh-pages already contains artifacts for version $ver. Aborting."
+                      exit 1
+                    }
+                  }
+                } catch {
+                  Write-Host "gh-pages does not exist yet (first deploy) — continuing."
+                }
+      
+                Write-Host "Version $ver is new — continuing."
 
       # 3) Zet volledige publish-output naar /clickonce/ op gh-pages
       - name: Prepare site folder for Pages
@@ -273,8 +261,21 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ steps.ver.outputs.version }}"
-          if (Test-Path "out\xafplugin.vsto") { Rename-Item "out\xafplugin.vsto" "out\xafplugin-$v.vsto" }
-          if (Test-Path "out\setup.exe")      { Rename-Item "out\setup.exe"      "out\setup-$v.exe" }
+          $outDir = "out"
+      
+          $vstoSrc = Join-Path $outDir "xafplugin.vsto"
+          $setupSrc = Join-Path $outDir "setup.exe"
+      
+          if (Test-Path -LiteralPath $vstoSrc) {
+            $vstoNewName = "xafplugin-$v.vsto"     # alleen naam
+            Rename-Item -LiteralPath $vstoSrc -NewName $vstoNewName -ErrorAction Stop
+          }
+      
+          if (Test-Path -LiteralPath $setupSrc) {
+            $setupNewName = "setup-$v.exe"         # alleen naam
+            Rename-Item -LiteralPath $setupSrc -NewName $setupNewName -ErrorAction Stop
+          }
+
 
       # 4b) Korte SHA voor in de release-naam
       - name: Compute short SHA
