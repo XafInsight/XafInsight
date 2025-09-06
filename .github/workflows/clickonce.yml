@@ -50,6 +50,7 @@ jobs:
           /p:SignManifests=true
           /p:ManifestCertificateThumbprint=${{ steps.cert.outputs.thumb }}
           /p:PublishDir="$((Resolve-Path .).Path)\xafplugin\publish\"
+          /p:ManifestTimestampUrl=http://timestamp.digicert.com
 
       - name: List publish output
         shell: pwsh
@@ -74,22 +75,65 @@ jobs:
           New-Item -ItemType Directory -Force "site/clickonce" | Out-Null
           Copy-Item "xafplugin\publish\*" "site\clickonce" -Recurse -Force
 
+      # 3a) Forceer binaire bytes (geen CRLF/LF conversie) voor alles onder /clickonce/
+      - name: Add .gitattributes to preserve file bytes
+        shell: pwsh
+        run: |
+          $lines = @(
+            '# Force binary handling: no CRLF/LF conversion for ClickOnce payload'
+            '/clickonce/** -text'
+          )
+          Set-Content -Path "site/.gitattributes" -Value $lines -Encoding ASCII
+
+      # 3b) Zet .nojekyll zodat GitHub Pages niets probeert te verwerken
+      - name: Disable Jekyll on GitHub Pages
+        shell: pwsh
+        run: New-Item -ItemType File -Path "site/.nojekyll" -Force | Out-Null
+
+      # 3c) Kopieer publiek certificaat naar de ClickOnce folder
+      - name: Copy public certificate to clickonce folder
+        shell: pwsh
+        run: |
+          $certFile = "xafinsight_codesign.cer"
+          if (Test-Path $certFile) {
+            Copy-Item $certFile "site/clickonce/" -Force
+            Write-Host "Copied $certFile to site/clickonce/"
+          } else {
+            Write-Host "Warning: $certFile not found in repo root."
+          }
+
       - name: Generate index.html
         shell: pwsh
         run: |
-          $html = @"
-<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<title>XafInsight ClickOnce</title>
-<h1>XafInsight ClickOnce deployment</h1>
-<ul>
-  <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>
-  <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>
-  <li><a href="xafplugin.application">xafplugin.application</a> (ClickOnce manifest)</li>
-</ul>
-"@
-          Set-Content -Path "site/clickonce/index.html" -Value $html -Encoding UTF8
+          $dest = "site\clickonce"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+
+          # Toon alleen links voor bestanden die bestaan
+          $links = @()
+          if (Test-Path "$dest\setup.exe")               { $links += '    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>' }
+          if (Test-Path "$dest\xafplugin.vsto")          { $links += '    <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>' }
+          if (Test-Path "$dest\xafplugin.application")   { $links += '    <li><a href="xafplugin.application">xafplugin.application</a> (ClickOnce manifest)</li>' }
+          if (Test-Path "$dest\xafinsight_codesign.cer") { $links += '    <li><a href="xafinsight_codesign.cer">xafinsight_codesign.cer</a> (signing certificate)</li>' }
+
+          $htmlLines = @(
+            '<!doctype html>',
+            '<html lang="en">',
+            '<head>',
+            '  <meta charset="utf-8" />',
+            '  <meta http-equiv="x-ua-compatible" content="ie=edge" />',
+            '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+            '  <title>XafInsight ClickOnce</title>',
+            '</head>',
+            '<body>',
+            '  <h1>XafInsight ClickOnce deployment</h1>',
+            '  <ul>'
+          ) + $links + @(
+            '  </ul>',
+            '</body>',
+            '</html>'
+          )
+
+          $htmlLines | Set-Content -Path "$dest\index.html" -Encoding UTF8
 
       - name: Deploy to gh-pages (keep existing files)
         uses: peaceiris/actions-gh-pages@v3
@@ -126,13 +170,20 @@ jobs:
             [System.IO.Compression.ZipFile]::CreateFromDirectory($appFiles, $zip)
           }
 
+      # 4b) Korte SHA voor in de release-naam
+      - name: Compute short SHA
+        shell: pwsh
+        run: |
+          $short = "${{ github.sha }}".Substring(0,7)
+          "SHORT_SHA=$short" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       # 5) Maak/Update een Release voor deze build
       - name: Create GitHub Release for build
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           target_commitish: ${{ github.sha }}
-          name: "Build ${{ github.run_number }} (${% raw %}{{ github.sha }}{% endraw %})"
+          name: "Build ${{ github.run_number }} (${{ env.SHORT_SHA }})"
           draft: false
           prerelease: false
           files: |

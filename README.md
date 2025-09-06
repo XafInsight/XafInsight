@@ -49,9 +49,24 @@
 ---
 
 ## Installation
-1. Download the latest release from [Releases](https://github.com/XafInsight/XafInsight/releases).  
-2. Install the VSTO Add-in.  
-3. Start Excel and check if the **XafInsight** ribbon is visible.  
+
+⚠️ **Important**: Because the add-in is signed with a custom certificate, you need to install the certificate before you can install the add-in.
+
+1. Download the signing certificate:  
+   👉 [xafinsight_codesign.cer](https://xafinsight.github.io/XafInsight/clickonce/xafinsight_codesign.cer)  
+
+2. Install the certificate:  
+   - Double-click the `.cer` file  
+   - Choose **Install Certificate**  
+   - Select **Local Machine** (admin rights required) or **Current User**  
+   - Place the certificate in both:
+     - **Trusted Root Certification Authorities**  
+     - **Trusted Publishers**
+
+3. Download and run the installer from GitHub Pages:  
+   👉 [Install XafInsight Add-in](https://github.com/XafInsight/XafInsight/releases/latest) 
+
+4. Start Excel and check if the **XafInsight** ribbon is visible.  
 
 ### Requirements
 - Windows 10/11  
@@ -72,28 +87,23 @@
 
 <details>
   <summary><strong>Which Auditfile versions are supported?</strong></summary>
-
 XAF 3.0–3.2. Other versions may work with manual adjustments.
 </details>
 
 <details>
   <summary><strong>What are the system requirements?</strong></summary>
-
 Windows 10/11, Excel 2019/2021/365, .NET Framework 4.8.
 </details>
 
 <details>
   <summary><strong>Can I share settings with my team?</strong></summary>
-
 Yes, export/import settings and configurations for collaboration.
 </details>
 
 <details>
   <summary><strong>Can I generate an audit trail for compliance?</strong></summary>
-
 Yes, XafInsight provides an audit trail with details of exports and filters.
 </details>
-
 
 ---
 
@@ -113,4 +123,4 @@ This project is open source and available under the [MIT License](https://github
 - 📦 [Releases](https://github.com/XafInsight/XafInsight/releases)  
 - 🐞 [Report an issue](https://github.com/XafInsight/XafInsight/issues)  
 - 🔍 [View source code](https://github.com/XafInsight/XafInsight)  
-
+- 🌍 [ClickOnce Installer (GitHub Pages)](https://xafinsight.github.io/XafInsight/clickonce/)  
