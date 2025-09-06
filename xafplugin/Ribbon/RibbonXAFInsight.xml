@@ -24,6 +24,7 @@
         <group id="XafInsightHelp" label="Help">
           <button id="Help" label="Help" getImage="GetHelpButtonImage" size="large" onAction="ButtonHelp_Click"/>
           <button id="ReportIssue" label="Report issue" getImage="GetReportIssueButtonImage" size="large" onAction="ButtonReportIssue_Click"/>
+          <button id="ApplicationInfo" label="Application info" getImage="GetApplicationInfoImage" size="large" onAction="ButtonApplicationInfo_Click"/>
         </group>
       </tab>
     </tabs>
