@@ -52,6 +52,71 @@ jobs:
           /p:PublishDir="$((Resolve-Path .).Path)\xafplugin\publish\"
           /p:ManifestTimestampUrl=http://timestamp.digicert.com
 
+      # 2b) Versie uit manifest halen (ClickOnce publish version)
+      - name: Extract ClickOnce version from manifest
+        id: ver
+        shell: pwsh
+        run: |
+          $app = "xafplugin\publish\xafplugin.application"
+          $vsto = "xafplugin\publish\xafplugin.vsto"
+          $version = $null
+
+          if (Test-Path $app) {
+            [xml]$x = Get-Content $app
+            $version = $x.assemblyIdentity.version
+            if (-not $version) { $version = $x.deployment.assemblyIdentity.version }
+            if (-not $version) { $version = $x.deployment.identity.version }
+          }
+
+          if (-not $version -and (Test-Path $vsto)) {
+            [xml]$x = Get-Content $vsto
+            $version = $x.assemblyIdentity.version
+            if (-not $version) { $version = $x.deployment.identity.version }
+          }
+
+          if (-not $version) {
+            Write-Error "Kon ClickOnce versie niet vinden in manifesten."
+            exit 1
+          }
+
+          "CLICKONCE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "version=$version"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+          Write-Host "ClickOnce version: $version"
+
+      # 2c) Guard: faal als versie al bestaat (tag of al op gh-pages)
+      - name: Guard - fail if version already released
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          if (-not $ver) { Write-Error "No version from manifest"; exit 1 }
+
+          # 1) Tag check
+          git fetch --tags origin | Out-Null
+          $tagExists = git tag -l "v$ver"
+          if ($tagExists) {
+            Write-Error "Tag v$ver already exists. Aborting to avoid duplicate release."
+            exit 1
+          }
+
+          # 2) gh-pages check
+          try {
+            git fetch origin gh-pages --depth=1 | Out-Null
+            $paths = git ls-tree -r --name-only origin/gh-pages
+            if ($paths) {
+              $re = 'clickonce[\\/]+Application Files[\\/].*' + [regex]::Escape($ver)
+              $match = $paths | Where-Object { $_ -match $re }
+              if ($match) {
+                Write-Error "gh-pages already contains artifacts for version $ver. Aborting."
+                exit 1
+              }
+            }
+          } catch {
+            Write-Host "gh-pages does not exist yet (first deploy) — continuing."
+          }
+
+          Write-Host "Version $ver is new — continuing."
+
       - name: List publish output
         shell: pwsh
         run: |
@@ -102,13 +167,14 @@ jobs:
             Write-Host "Warning: $certFile not found in repo root."
           }
 
+      # 3d) Genereer index.html en toon versie
       - name: Generate index.html
         shell: pwsh
         run: |
           $dest = "site\clickonce"
+          $ver  = "${{ steps.ver.outputs.version }}"
           New-Item -ItemType Directory -Force $dest | Out-Null
 
-          # Toon alleen links voor bestanden die bestaan
           $links = @()
           if (Test-Path "$dest\setup.exe")               { $links += '    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>' }
           if (Test-Path "$dest\xafplugin.vsto")          { $links += '    <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>' }
@@ -126,6 +192,7 @@ jobs:
             '</head>',
             '<body>',
             '  <h1>XafInsight ClickOnce deployment</h1>',
+            "  <p><strong>Version:</strong> $ver</p>",
             '  <ul>'
           ) + $links + @(
             '  </ul>',
@@ -168,7 +235,15 @@ jobs:
             $zip = Join-Path (Resolve-Path out) "application-files.zip"
             if (Test-Path $zip) { Remove-Item $zip -Force }
             [System.IO.Compression.ZipFile]::CreateFromDirectory($appFiles, $zip)
-          }
+
+      # 4a) Hernoem assets met versie
+      - name: Rename assets with version
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          if (Test-Path "out\xafplugin.vsto")        { Rename-Item "out\xafplugin.vsto"        "out\xafplugin-$v.vsto" }
+          if (Test-Path "out\setup.exe")             { Rename-Item "out\setup.exe"             "out\setup-$v.exe" }
+          if (Test-Path "out\xafplugin.application") { Rename-Item "out\xafplugin.application" "out\xafplugin-$v.application" }
 
       # 4b) Korte SHA voor in de release-naam
       - name: Compute short SHA
@@ -177,19 +252,55 @@ jobs:
           $short = "${{ github.sha }}".Substring(0,7)
           "SHORT_SHA=$short" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # 5) Maak/Update een Release voor deze build
+      # 4c) Schrijf de ClickOnce versie terug in xafplugin.csproj zodat baseline meeloopt
+      - name: Sync ApplicationVersion in csproj and push [skip ci]
+        shell: pwsh
+        run: |
+          $csproj = "xafplugin\xafplugin.csproj"
+          $ver = "${{ steps.ver.outputs.version }}"
+
+          if (-not (Test-Path $csproj)) { throw "csproj not found: $csproj" }
+
+          [xml]$xml = Get-Content $csproj
+          $nsm = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+          $nsm.AddNamespace("msb","http://schemas.microsoft.com/developer/msbuild/2003")
+
+          $node = $xml.SelectSingleNode("//msb:Project/msb:PropertyGroup/msb:ApplicationVersion", $nsm)
+          if (-not $node) {
+            $pg = $xml.SelectSingleNode("//msb:Project/msb:PropertyGroup[1]", $nsm)
+            if (-not $pg) { throw "No PropertyGroup in csproj" }
+            $node = $xml.CreateElement("ApplicationVersion", "http://schemas.microsoft.com/developer/msbuild/2003")
+            $pg.AppendChild($node) | Out-Null
+          }
+
+          $old = $node.InnerText
+          $node.InnerText = $ver
+          $xml.Save($csproj)
+
+          if ($old -ne $ver) {
+            git config user.email "ci@github.actions"
+            git config user.name  "GitHub Actions"
+            git add $csproj
+            git commit -m "chore: sync ApplicationVersion to $ver [skip ci]" | Out-Null
+            git push origin HEAD:main
+            Write-Host "Updated ApplicationVersion from '$old' to '$ver' and pushed [skip ci]."
+          } else {
+            Write-Host "ApplicationVersion already '$ver'; no commit."
+          }
+
+      # 5) Maak/Update een Release voor deze build (tag = v<ClickOnceVersion>)
       - name: Create GitHub Release for build
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
+          tag_name: v${{ steps.ver.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: "Build ${{ github.run_number }} (${{ env.SHORT_SHA }})"
+          name: "XafInsight ${{ steps.ver.outputs.version }} (${{ env.SHORT_SHA }})"
           draft: false
           prerelease: false
           files: |
-            out/xafplugin.vsto
-            out/setup.exe
-            out/xafplugin.application
+            out/xafplugin-${{ steps.ver.outputs.version }}.vsto
+            out/setup-${{ steps.ver.outputs.version }}.exe
+            out/xafplugin-${{ steps.ver.outputs.version }}.application
             out/application-files.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
