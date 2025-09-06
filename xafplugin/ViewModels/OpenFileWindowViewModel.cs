@@ -283,8 +283,7 @@ namespace xafplugin.ViewModels
                 }
 
                 var result = _dialog.Show(
-                     "Multiple files were selected. Only the first file will be used as the current file for settings.\n" +
-                     "The order of selection determines the file key.\n" +
+                     "Multiple files were selected.\n" +
                      "It is highly recommended to export the database for future use.\n" +
                      "Do you want to export the database?",
                      "Confirm",
