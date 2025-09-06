@@ -1,13 +1,11 @@
-name: Build & Publish VSTO (main + testing to GitHub Pages)
+name: Build & Publish VSTO (main → GitHub Pages)
 
 permissions:
-  contents: write  # nodig voor push naar gh-pages
+  contents: write  # push naar gh-pages
 
 on:
   push:
-    branches:
-      - main
-      - testing
+    branches: [ main ]
   workflow_dispatch: {}
 
 jobs:
@@ -23,74 +21,44 @@ jobs:
       - name: Restore NuGet
         run: nuget restore xafplugin.sln
 
-      # --- Certificaat herstellen uit secrets ---
-      - name: Restore signing certificate (PFX)
+      # 1) Decodeer PFX, importeer in CurrentUser\My, expose THUMBPRINT
+      - name: Restore & import signing certificate
         id: cert
         shell: pwsh
         run: |
           if (-not "${{ secrets.CODESIGN_PFX_B64 }}") { throw "Missing secret CODESIGN_PFX_B64" }
           if (-not "${{ secrets.CODESIGN_PFX_PASSWORD }}") { throw "Missing secret CODESIGN_PFX_PASSWORD" }
-          $bytes = [Convert]::FromBase64String("${{ secrets.CODESIGN_PFX_B64 }}")
+
           $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-          [IO.File]::WriteAllBytes($pfxPath, $bytes)
-          "pfx_path=$pfxPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.CODESIGN_PFX_B64 }}"))
 
-      - name: Determine branch and URLs
-        id: meta
-        shell: pwsh
-        run: |
-          $branch = "${{ github.ref_name }}"
-          $base = "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
-          if ($branch -eq "testing") {
-            $path = "clickonce-testing"
-            $install = "$base/$path/"
-            "publish_target=$path"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "install_url=$install"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "override_urls=true"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          } elseif ($branch -eq "main") {
-            $path = "clickonce"
-            "publish_target=$path"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            "override_urls=false"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          } else {
-            throw "Unexpected branch: $branch"
-          }
+          # Valideer wachtwoord / PFX
+          certutil -p "${{ secrets.CODESIGN_PFX_PASSWORD }}" -dump "$pfxPath" | Out-Null
 
-      # Build + ClickOnce Publish (gesigned)
-      # testing → override InstallUrl/UpdateUrl naar /clickonce-testing/
-      - name: ClickOnce Publish (testing, signed)
-        if: steps.meta.outputs.override_urls == 'true'
+          $sec = ConvertTo-SecureString "${{ secrets.CODESIGN_PFX_PASSWORD }}" -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath "$pfxPath" -CertStoreLocation Cert:\CurrentUser\My -Password $sec
+          if (-not $cert.HasPrivateKey) { throw "Imported cert has no private key" }
+
+          "thumb=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # 2) ClickOnce Publish (gesigned via THUMBPRINT)
+      - name: ClickOnce Publish (main, signed via thumbprint)
         shell: pwsh
         run: >
-          msbuild xafplugin/xafplugin.csproj
-          /t:Publish /p:Configuration=Release
-          /p:AutoIncrementApplicationRevision=true
-          /p:InstallUrl='${{ steps.meta.outputs.install_url }}'
-          /p:UpdateUrl='${{ steps.meta.outputs.install_url }}'
-          /p:SignManifests=true
-          /p:ManifestKeyFile='${{ steps.cert.outputs.pfx_path }}'
-          /p:ManifestKeyPassword='${{ secrets.CODESIGN_PFX_PASSWORD }}'
-
-      # main → gebruik csproj (productie InstallUrl), geen URL-override
-      - name: ClickOnce Publish (main, signed)
-        if: steps.meta.outputs.override_urls != 'true'
-        shell: pwsh
-        run: >
-          msbuild xafplugin/xafplugin.csproj
+          msbuild "xafplugin/xafplugin.csproj"
           /t:Publish /p:Configuration=Release
           /p:AutoIncrementApplicationRevision=true
           /p:SignManifests=true
-          /p:ManifestKeyFile='${{ steps.cert.outputs.pfx_path }}'
-          /p:ManifestKeyPassword='${{ secrets.CODESIGN_PFX_PASSWORD }}'
+          /p:ManifestCertificateThumbprint=${{ steps.cert.outputs.thumb }}
 
-      # Maak een tijdelijke site-map met alléén de juiste subfolder
+      # 3) Zet volledige publish-output naar /clickonce/ op gh-pages
       - name: Prepare site folder for Pages
         shell: pwsh
         run: |
           if (Test-Path site) { Remove-Item -Recurse -Force site }
-          New-Item -ItemType Directory -Force "site/${{ steps.meta.outputs.publish_target }}" | Out-Null
-          Copy-Item "xafplugin\publish\*" "site\${{ steps.meta.outputs.publish_target }}" -Recurse -Force
+          New-Item -ItemType Directory -Force "site/clickonce" | Out-Null
+          Copy-Item "xafplugin\publish\*" "site\clickonce" -Recurse -Force
 
-      # Deploy naar gh-pages en bewaar bestaande files (zodat beide paden naast elkaar bestaan)
       - name: Deploy to gh-pages (keep existing files)
         uses: peaceiris/actions-gh-pages@v3
         with:
