@@ -1,5 +1,6 @@
 ﻿using Microsoft.Office.Core;
 using NLog;
+using SQLitePCL;
 using System;
 using System.IO;
 using System.Resources;
@@ -38,6 +39,7 @@ namespace xafplugin
         {
             try
             {
+                Batteries_V2.Init();
                 _config = ConfigLoader.Load();
                 LoggerSetup.Configure();
             } catch (Exception ex)

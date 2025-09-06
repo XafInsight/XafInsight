@@ -419,38 +419,57 @@ namespace xafplugin.ViewModels
 
             return await Task.Run(() =>
             {
-                using (var SQLiteHelper = new SqliteHelper(fullPath))
+                try
                 {
-                    using (var conn = SQLiteHelper.GetWriteConnection())
+                    using (var SQLiteHelper = new SqliteHelper(fullPath))
                     {
-                        using (var importer = new DynamicXmlImporter(conn))
+                        using (var conn = SQLiteHelper.GetWriteConnection())
                         {
-                            foreach (string file in _selectedEntry)
+                            using (var importer = new DynamicXmlImporter(conn))
                             {
-                                ct.ThrowIfCancellationRequested();
-
-                                if (!File.Exists(file))
+                                foreach (string file in _selectedEntry)
                                 {
-                                    _logger.Warn("Selected file does not exist: {0}", file);
-                                    throw new FileNotFoundException("Selected file does not exist.", file);
-                                }
+                                    ct.ThrowIfCancellationRequested();
 
-                                if (string.IsNullOrEmpty(fullPath))
-                                {
-                                    throw new InvalidOperationException("Failed to determine database path.");
-                                }
+                                    if (!File.Exists(file))
+                                    {
+                                        _logger.Warn("Selected file does not exist: {0}", file);
+                                        throw new FileNotFoundException("Selected file does not exist.", file);
+                                    }
 
-                                using (var xmlStream = File.OpenRead(file))
-                                {
-                                    importer.Import(xmlStream);
+                                    if (string.IsNullOrEmpty(fullPath))
+                                    {
+                                        throw new InvalidOperationException("Failed to determine database path.");
+                                    }
+
+                                    using (var xmlStream = File.OpenRead(file))
+                                    {
+                                        importer.Import(xmlStream);
+                                    }
                                 }
                             }
                         }
                     }
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    return true;
                 }
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                return true;
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Error generating database.");
+                    if (File.Exists(fullPath))
+                    {
+                        try
+                        {
+                            File.Delete(fullPath);
+                        }
+                        catch (Exception delEx)
+                        {
+                            _logger.Warn(delEx, "Failed to delete database file after generation error: {0}", fullPath);
+                        }
+                    }
+                    throw;
+                }
             }, ct);
         }
 

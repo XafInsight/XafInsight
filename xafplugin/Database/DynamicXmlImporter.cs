@@ -1,19 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data.SQLite;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
+using Microsoft.Data.Sqlite;
 
 namespace xafplugin.Database
 {
     public class DynamicXmlImporter : IDisposable
     {
-        private readonly SQLiteConnection _conn;
+        private readonly SqliteConnection _conn;
 
-        private SQLiteTransaction _currentTransaction;
+        private SqliteTransaction _currentTransaction;
         private int _insertCount = 0;
         private readonly int _batchSize;
         private bool _disposed = false;
@@ -41,7 +41,7 @@ namespace xafplugin.Database
 
         private static readonly Regex _identCleaner = new Regex(@"[^A-Za-z0-9_]", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
 
-        public DynamicXmlImporter(SQLiteConnection conn, int batchSize = 25000)
+        public DynamicXmlImporter(SqliteConnection conn, int batchSize = 25000)
         {
             _conn = conn;
             _batchSize = batchSize;
@@ -288,7 +288,7 @@ namespace xafplugin.Database
                         List<string> columnNames = new List<string>();
                         Dictionary<string, string> columnTypes = new Dictionary<string, string>();
                         
-                        using (var cmd = new SQLiteCommand($"PRAGMA table_info([{childTable}])", _conn, transaction))
+                        using (var cmd = new SqliteCommand($"PRAGMA table_info([{childTable}])", _conn, transaction))
                         using (var reader = cmd.ExecuteReader())
                         {
                             while (reader.Read())
@@ -427,17 +427,26 @@ namespace xafplugin.Database
             CommitIfNeeded();
         }
 
+        // Create command helper that always binds the current transaction when present
+        private SqliteCommand CreateCommand(string sql, SqliteTransaction explicitTx = null)
+        {
+            var cmd = _conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.Transaction = explicitTx ?? _currentTransaction;
+            return cmd;
+        }
+
         private void ExecuteNonQuery(string sql)
         {
-            using (var cmd = new SQLiteCommand(sql, _conn))
+            using (var cmd = CreateCommand(sql))
             {
                 cmd.ExecuteNonQuery();
             }
         }
         
-        private void ExecuteNonQuery(string sql, SQLiteTransaction transaction)
+        private void ExecuteNonQuery(string sql, SqliteTransaction transaction)
         {
-            using (var cmd = new SQLiteCommand(sql, _conn, transaction))
+            using (var cmd = CreateCommand(sql, transaction))
             {
                 cmd.ExecuteNonQuery();
             }
@@ -479,7 +488,7 @@ namespace xafplugin.Database
             if (!_tableCols.TryGetValue(table, out var set))
             {
                 set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                using (var cmd = new SQLiteCommand($"PRAGMA table_info([{table}]);", _conn))
+                using (var cmd = CreateCommand($"PRAGMA table_info([{table}]);"))
                 using (var rdr = cmd.ExecuteReader())
                 {
                     while (rdr.Read())
@@ -519,7 +528,7 @@ namespace xafplugin.Database
             List<string> cols = new List<string>();
             List<string> pars = new List<string>();
 
-            using (var cmd = new SQLiteCommand())
+            using (var cmd = new SqliteCommand())
             {
                 cmd.Connection = _conn;
                 cmd.Transaction = _currentTransaction;
@@ -527,7 +536,10 @@ namespace xafplugin.Database
                 // Add the ID column explicitly
                 cols.Add("[_Id]");
                 pars.Add("@_Id");
-                cmd.Parameters.AddWithValue("@_Id", newId);
+                var pId = cmd.CreateParameter();
+                pId.ParameterName = "@_Id";
+                pId.Value = newId;
+                cmd.Parameters.Add(pId);
 
                 foreach (KeyValuePair<string, object> kv in data)
                 {
@@ -535,7 +547,10 @@ namespace xafplugin.Database
                     cols.Add($"[{col}]");
                     string p = $"@{col}";
                     pars.Add(p);
-                    cmd.Parameters.AddWithValue(p, kv.Value ?? DBNull.Value);
+                    var par = cmd.CreateParameter();
+                    par.ParameterName = p;
+                    par.Value = kv.Value ?? DBNull.Value;
+                    cmd.Parameters.Add(par);
                 }
 
                 string sql = $"INSERT INTO [{table}] ({string.Join(", ", cols)}) VALUES ({string.Join(", ", pars)});";
@@ -562,7 +577,7 @@ namespace xafplugin.Database
 
             List<string> sets = new List<string>();
 
-            using (var cmd = new SQLiteCommand())
+            using (var cmd = new SqliteCommand())
             {
                 cmd.Connection = _conn;
                 cmd.Transaction = _currentTransaction;
@@ -571,12 +586,18 @@ namespace xafplugin.Database
                 {
                     string col = NormalizeName(kv.Key);
                     sets.Add($"[{col}] = @{col}");
-                    cmd.Parameters.AddWithValue($"@{col}", kv.Value ?? DBNull.Value);
+                    var p = cmd.CreateParameter();
+                    p.ParameterName = $"@{col}";
+                    p.Value = kv.Value ?? DBNull.Value;
+                    cmd.Parameters.Add(p);
                 }
 
                 string sql = $"UPDATE [{table}] SET {string.Join(", ", sets)} WHERE [_Id] = @_id;";
                 cmd.CommandText = sql;
-                cmd.Parameters.AddWithValue("@_id", rowId);
+                var pid = cmd.CreateParameter();
+                pid.ParameterName = "@_id";
+                pid.Value = rowId;
+                cmd.Parameters.Add(pid);
 
                 cmd.ExecuteNonQuery();
             }
@@ -585,9 +606,12 @@ namespace xafplugin.Database
         private void DeleteRow(string table, string rowId)
         {
             if (string.IsNullOrEmpty(rowId)) return;
-            using (var del = new SQLiteCommand($"DELETE FROM [{table}] WHERE [_Id] = @_id;", _conn, _currentTransaction))
+            using (var del = new SqliteCommand($"DELETE FROM [{table}] WHERE [_Id] = @_id;", _conn, _currentTransaction))
             {
-                del.Parameters.AddWithValue("@_id", rowId);
+                var p = del.CreateParameter();
+                p.ParameterName = "@_id";
+                p.Value = rowId;
+                del.Parameters.Add(p);
                 del.ExecuteNonQuery();
             }
         }

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Data;
-using System.Data.SQLite;
 using System.IO;
+using Microsoft.Data.Sqlite;
 
 namespace xafplugin.Database
 {
@@ -15,14 +15,14 @@ namespace xafplugin.Database
     public sealed class SqliteHelper : IDisposable
     {
         private readonly string _dbPath;
-        private SQLiteConnection _readConnection;
-        private SQLiteConnection _writeConnection;
+        private SqliteConnection _readConnection;
+        private SqliteConnection _writeConnection;
         private bool _disposed;
 
         /// <summary>
         /// Read-only connection (opened lazily). Caller must NOT dispose it.
         /// </summary>
-        public SQLiteConnection Connection
+        public SqliteConnection Connection
         {
             get
             {
@@ -47,7 +47,7 @@ namespace xafplugin.Database
         /// <summary>
         /// Creates and opens a writable connection. Caller must dispose it.
         /// </summary>
-        public SQLiteConnection GetWriteConnection(bool enableForeignKeys = true)
+        public SqliteConnection GetWriteConnection(bool enableForeignKeys = true)
         {
             ThrowIfDisposed();
             if (_writeConnection == null)
@@ -87,7 +87,7 @@ namespace xafplugin.Database
 
             try
             {
-                using (var conn = new SQLiteConnection("Data Source=:memory:;Version=3;New=True;"))
+                using (var conn = new SqliteConnection("Data Source=:memory:"))
                 {
                     conn.Open();
 
@@ -95,7 +95,7 @@ namespace xafplugin.Database
 
                     if (LooksLikeSelect(trimmed))
                     {
-                        using (var cmd = new SQLiteCommand(trimmed, conn))
+                        using (var cmd = new SqliteCommand(trimmed, conn))
                         using (cmd.ExecuteReader(CommandBehavior.SchemaOnly))
                         {
                             return true;
@@ -103,7 +103,7 @@ namespace xafplugin.Database
                     }
                     else
                     {
-                        using (var cmd = new SQLiteCommand("EXPLAIN " + trimmed, conn))
+                        using (var cmd = new SqliteCommand("EXPLAIN " + trimmed, conn))
                         using (cmd.ExecuteReader())
                         {
                             return true;
@@ -111,7 +111,7 @@ namespace xafplugin.Database
                     }
                 }
             }
-            catch (SQLiteException ex)
+            catch (SqliteException ex)
             {
                 if (IsSQLiteSyntaxError(ex))
                 {
@@ -169,23 +169,21 @@ namespace xafplugin.Database
         }
 
         #region internal
-        private SQLiteConnection CreateConnection(bool readOnly, bool enableForeignKeys = true)
+        private SqliteConnection CreateConnection(bool readOnly, bool enableForeignKeys = true)
         {
-            var csb = new SQLiteConnectionStringBuilder
+            var csb = new SqliteConnectionStringBuilder
             {
                 DataSource = _dbPath,
-                Version = 3,
-                ReadOnly = readOnly,
-                ForeignKeys = enableForeignKeys
+                Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWriteCreate
             };
 
-            var conn = new SQLiteConnection(csb.ToString());
+            var conn = new SqliteConnection(csb.ToString());
             conn.Open();
 
             if (enableForeignKeys)
             {
-                // Ensure pragma actually applied (some drivers may ignore builder flag).
-                using (var cmd = new SQLiteCommand("PRAGMA foreign_keys = ON;", conn))
+                // Ensure pragma actually applied.
+                using (var cmd = new SqliteCommand("PRAGMA foreign_keys = ON;", conn))
                 {
                     cmd.ExecuteNonQuery();
                 }
@@ -204,10 +202,10 @@ namespace xafplugin.Database
 
             if (!File.Exists(_dbPath))
             {
-                // Fail fast instead of silent Console logging.
+                // Create empty file so ReadWriteCreate can open it without native helpers.
                 try
                 {
-                    SQLiteConnection.CreateFile(_dbPath);
+                    using (File.Create(_dbPath)) { }
                 }
                 catch (Exception ex)
                 {
@@ -216,7 +214,7 @@ namespace xafplugin.Database
             }
         }
 
-        private static bool IsSQLiteSyntaxError(SQLiteException ex)
+        private static bool IsSQLiteSyntaxError(SqliteException ex)
         {
             var msg = ex.Message.ToLowerInvariant();
             return

@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using System.Linq;
 using xafplugin.Interfaces;
 using xafplugin.Modules;
@@ -14,7 +14,7 @@ namespace xafplugin.Database
         private static readonly Logger logger = LogManager.GetCurrentClassLogger();
 
         private readonly SqliteHelper _helper;
-        private readonly SQLiteConnection _externalConnection;
+        private readonly SqliteConnection _externalConnection;
         private readonly bool _ownsHelper;
         private bool _disposed;
 
@@ -35,12 +35,12 @@ namespace xafplugin.Database
         }
 
         // Legacy: direct external connection (caller manages connection lifetime)
-        public DatabaseService(SQLiteConnection connection)
+        public DatabaseService(SqliteConnection connection)
         {
             _externalConnection = connection ?? throw new ArgumentNullException(nameof(connection));
         }
 
-        private SQLiteConnection Connection
+        private SqliteConnection Connection
         {
             get
             {
@@ -48,7 +48,7 @@ namespace xafplugin.Database
                 if (_externalConnection != null)
                 {
                     if (_externalConnection.State != ConnectionState.Open)
-                        throw new InvalidOperationException("Injected SQLiteConnection is not open.");
+                        throw new InvalidOperationException("Injected SqliteConnection is not open.");
                     return _externalConnection;
                 }
                 return _helper.Connection; 
@@ -149,7 +149,7 @@ namespace xafplugin.Database
             TryEnsureUsable();
 
             logger.Debug("Select2DArray executing.");
-            using (var cmd = new SQLiteCommand(sql, Connection))
+            using (var cmd = new SqliteCommand(sql, Connection))
             {
                 AddParameters(cmd, parameters);
 
@@ -196,7 +196,7 @@ namespace xafplugin.Database
                 var isSelect = LooksLikeSelect(trimmed);
                 var explain = (isSelect ? "EXPLAIN QUERY PLAN\n" : "EXPLAIN\n") + trimmed;
 
-                using (var cmd = new SQLiteCommand(explain, Connection))
+                using (var cmd = new SqliteCommand(explain, Connection))
                 using (cmd.ExecuteReader())
                 {
                     // success -> parsed & planned
@@ -222,7 +222,7 @@ namespace xafplugin.Database
 
                 // Faster EXISTS wrapping; LIMIT 1 avoids scanning entire result.
                 var existsSql = "SELECT EXISTS(SELECT 1 FROM (" + trimmed + ") AS sub LIMIT 1);";
-                using (var cmd = new SQLiteCommand(existsSql, Connection))
+                using (var cmd = new SqliteCommand(existsSql, Connection))
                 {
                     var val = Convert.ToInt32(cmd.ExecuteScalar());
                     return val == 1;
@@ -253,11 +253,11 @@ namespace xafplugin.Database
 
         #region internal functions
 
-        private void Execute(string sql, Action<SQLiteDataReader> readerAction, string context)
+        private void Execute(string sql, Action<SqliteDataReader> readerAction, string context)
         {
             try
             {
-                using (var cmd = new SQLiteCommand(sql, Connection))
+                using (var cmd = new SqliteCommand(sql, Connection))
                 using (var reader = cmd.ExecuteReader())
                 {
                     readerAction(reader);
@@ -270,7 +270,7 @@ namespace xafplugin.Database
             }
         }
 
-        private List<T> ExecuteList<T>(string sql, Func<SQLiteDataReader, T> map, Action<List<T>> onDone = null, string context = null)
+        private List<T> ExecuteList<T>(string sql, Func<SqliteDataReader, T> map, Action<List<T>> onDone = null, string context = null)
         {
             var list = new List<T>();
             Execute(sql, reader =>
@@ -284,12 +284,15 @@ namespace xafplugin.Database
             return list;
         }
 
-        private static void AddParameters(SQLiteCommand cmd, IDictionary<string, object> parameters)
+        private static void AddParameters(SqliteCommand cmd, IDictionary<string, object> parameters)
         {
             if (parameters == null) return;
             foreach (var kv in parameters)
             {
-                cmd.Parameters.AddWithValue(kv.Key, kv.Value ?? DBNull.Value);
+                var p = cmd.CreateParameter();
+                p.ParameterName = kv.Key;
+                p.Value = kv.Value ?? DBNull.Value;
+                cmd.Parameters.Add(p);
             }
         }
 
@@ -314,7 +317,7 @@ namespace xafplugin.Database
         private static string QuoteIdentifier(string name)
         {
             // Basic defensive quoting with square brackets (SQLite accepts these).
-            return "[" + name.Replace("]", "]]") + "]";
+            return "[" + name.Replace("]", "]] ") + "]";
         }
 
         private static bool LooksLikeSelect(string s)

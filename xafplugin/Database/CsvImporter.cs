@@ -2,24 +2,24 @@ using NLog;
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.SQLite;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Data.Sqlite;
 
 namespace xafplugin.Database
 {
     public class CsvImporter : IDisposable
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-        private readonly SQLiteConnection _connection;
+        private readonly SqliteConnection _connection;
         private readonly char _delimiter;
         private readonly bool _hasHeaders;
         private readonly Encoding _encoding;
         private bool _disposed = false;
 
-        public CsvImporter(SQLiteConnection connection, char delimiter = ';', bool hasHeaders = true, Encoding encoding = null)
+        public CsvImporter(SqliteConnection connection, char delimiter = ';', bool hasHeaders = true, Encoding encoding = null)
         {
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));
             _delimiter = delimiter;
@@ -242,11 +242,14 @@ namespace xafplugin.Database
                     using (var cmd = _connection.CreateCommand())
                     {
                         cmd.CommandText = insertSql.ToString();
+                        cmd.Transaction = transaction;
                         
                         // Create parameters
                         for (int i = 0; i < data.Columns.Count; i++)
                         {
-                            cmd.Parameters.Add(new SQLiteParameter($"@p{i}"));
+                            var p = cmd.CreateParameter();
+                            p.ParameterName = $"@p{i}";
+                            cmd.Parameters.Add(p);
                         }
 
                         // Insert each row
