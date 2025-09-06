@@ -41,7 +41,7 @@ jobs:
 
           "thumb=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # 2) ClickOnce Publish (gesigned via THUMBPRINT)
+      # 2) ClickOnce Publish (gesigned via THUMBPRINT) + forceer outputmap
       - name: ClickOnce Publish (main, signed via thumbprint)
         shell: pwsh
         run: >
@@ -50,6 +50,22 @@ jobs:
           /p:AutoIncrementApplicationRevision=true
           /p:SignManifests=true
           /p:ManifestCertificateThumbprint=${{ steps.cert.outputs.thumb }}
+          /p:PublishDir="$((Resolve-Path .).Path)\xafplugin\publish\"
+
+      - name: List publish output
+        shell: pwsh
+        run: |
+          Write-Host "Workspace: $((Resolve-Path .).Path)"
+          if (Test-Path "xafplugin\publish") {
+            Write-Host "Publish folder content:"
+            Get-ChildItem -Recurse -Force "xafplugin\publish" | ForEach-Object { Write-Host $_.FullName }
+          } else {
+            Write-Host "Publish folder not found."
+            Write-Host "Fallback check (bin\Release\app.publish):"
+            if (Test-Path "xafplugin\bin\Release\app.publish") {
+              Get-ChildItem -Recurse -Force "xafplugin\bin\Release\app.publish" | ForEach-Object { Write-Host $_.FullName }
+            }
+          }
 
       # 3) Zet volledige publish-output naar /clickonce/ op gh-pages
       - name: Prepare site folder for Pages
