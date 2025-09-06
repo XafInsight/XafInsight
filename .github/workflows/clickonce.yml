@@ -79,10 +79,11 @@ jobs:
       - name: Add .gitattributes to preserve file bytes
         shell: pwsh
         run: |
-          @"
-# Force binary handling: no CRLF/LF conversion for ClickOnce payload
-/clickonce/** -text
-"@ | Set-Content -Path "site/.gitattributes" -Encoding ASCII
+          $lines = @(
+            '# Force binary handling: no CRLF/LF conversion for ClickOnce payload'
+            '/clickonce/** -text'
+          )
+          Set-Content -Path "site/.gitattributes" -Value $lines -Encoding ASCII
 
       # 3b) Zet .nojekyll zodat GitHub Pages niets probeert te verwerken
       - name: Disable Jekyll on GitHub Pages
