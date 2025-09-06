@@ -112,25 +112,27 @@ jobs:
         run: |
           $dest = "site\clickonce"
           $ver  = "${{ steps.ver.outputs.version }}"
-          $html = @'
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>XafInsight ClickOnce</title>
-</head>
-<body>
-  <h1>XafInsight ClickOnce deployment</h1>
-  <p><strong>Version:</strong> VERSION_PLACEHOLDER</p>
-  <ul>
-    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>
-    <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>
-  </ul>
-</body>
-</html>
-'@
-          $html = $html.Replace('VERSION_PLACEHOLDER', $ver)
+      
+          $html = @(
+            '<!doctype html>'
+            '<html lang="en">'
+            '<head>'
+            '  <meta charset="utf-8">'
+            '  <title>XafInsight ClickOnce</title>'
+            '</head>'
+            '<body>'
+            '  <h1>XafInsight ClickOnce deployment</h1>'
+            "  <p><strong>Version:</strong> $ver</p>"
+            '  <ul>'
+            '    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>'
+            '    <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>'
+            '  </ul>'
+            '</body>'
+            '</html>'
+          ) -join "`r`n"
+      
           $html | Set-Content -Path "$dest\index.html" -Encoding UTF8
+
 
       - name: Deploy to gh-pages (keep existing files)
         uses: peaceiris/actions-gh-pages@v3
