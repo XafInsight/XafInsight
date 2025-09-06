@@ -141,13 +141,20 @@ jobs:
             [System.IO.Compression.ZipFile]::CreateFromDirectory($appFiles, $zip)
           }
 
+      # 4b) Korte SHA voor in de release-naam
+      - name: Compute short SHA
+        shell: pwsh
+        run: |
+          $short = "${{ github.sha }}".Substring(0,7)
+          "SHORT_SHA=$short" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       # 5) Maak/Update een Release voor deze build
       - name: Create GitHub Release for build
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           target_commitish: ${{ github.sha }}
-          name: "Build ${{ github.run_number }} (${% raw %}{{ github.sha }}{% endraw %})"
+          name: "Build ${{ github.run_number }} (${{ env.SHORT_SHA }})"
           draft: false
           prerelease: false
           files: |
