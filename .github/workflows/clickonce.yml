@@ -1,7 +1,7 @@
 name: Build & Publish VSTO (main → GitHub Pages)
 
 permissions:
-  contents: write
+  contents: write  # push naar gh-pages + releases
 
 on:
   push:
@@ -15,17 +15,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pin MSBuild/VS 2022 x64
       - name: Setup MSBuild (VS 2022 x64)
         uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: '[17.0,18.0)'
-          msbuild-architecture: 'x64'
-          vs-prerelease: true
 
       - name: Restore NuGet
         run: nuget restore xafplugin.sln
 
-      # 1) Import codesign PFX (fail-fast)
+      # 0) Bepaal ClickOnce-versie uit GitHub run number (1.0.0.<run>)
+      - name: Compute version from GitHub run number
+        id: ver
+        shell: pwsh
+        run: |
+          $run = [int]("${{ github.run_number }}")
+          if ($run -gt 65535) { throw "Run number $run is too large for ClickOnce (max 65535)" }
+          $version = "1.0.0.$run"
+          "CLICKONCE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "version=$version"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "ClickOnce version: $version"
+
+      # 1) Decodeer PFX, importeer in CurrentUser\My, expose THUMBPRINT
       - name: Restore & import signing certificate
         id: cert
         shell: pwsh
@@ -40,44 +49,37 @@ jobs:
           if (-not $cert -or -not $cert.HasPrivateKey) { throw "Cert import failed or no private key" }
           "thumb=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # 2) Publish ClickOnce (Excel VSTO) naar vaste map
+      # 2) ClickOnce Publish (gebruikt versie uit stap 'ver')
       - name: ClickOnce Publish
         shell: pwsh
         run: >
           msbuild "xafplugin/xafplugin.csproj"
           /t:Publish /p:Configuration=Release
-          /p:AutoIncrementApplicationRevision=true
           /p:SignManifests=true
           /p:ManifestCertificateThumbprint=${{ steps.cert.outputs.thumb }}
           /p:PublishDir="$((Resolve-Path .).Path)\xafplugin\publish\"
           /p:ManifestTimestampUrl=http://timestamp.digicert.com
+          /p:AutoIncrementApplicationRevision=false
+          /p:ApplicationVersion=${{ steps.ver.outputs.version }}
 
-      # 2b) Version uit .vsto (fail-fast, vaste padnamen)
-      - name: Extract ClickOnce version from VSTO
-        id: ver
+      # 2a) Fail-fast: vereiste publish-bestanden moeten bestaan
+      - name: Verify publish output
         shell: pwsh
         run: |
-          $pub  = "xafplugin\publish"
-          $vsto = Join-Path $pub "xafplugin.vsto"
-          if (-not (Test-Path -LiteralPath $vsto)) { throw ".vsto niet gevonden op verwachte locatie: $vsto" }
+          $pub   = "xafplugin\publish"
+          $vsto  = Join-Path $pub "xafplugin.vsto"
+          $setup = Join-Path $pub "setup.exe"
+          if (-not (Test-Path $pub))  { throw "Publish folder missing: $pub" }
+          if (-not (Test-Path $vsto)) { throw "Missing VSTO: $vsto" }
+          if (-not (Test-Path $setup)) { throw "Missing setup.exe: $setup" }
+          Write-Host "Publish OK."
 
-          [xml]$xml = Get-Content -LiteralPath $vsto
-          $verNode = $xml.SelectSingleNode(
-            "/*[local-name()='assembly' and namespace-uri()='urn:schemas-microsoft-com:asm.v1']/*[local-name()='assemblyIdentity' and namespace-uri()='urn:schemas-microsoft-com:asm.v1']/@version"
-          )
-          if (-not $verNode -or [string]::IsNullOrWhiteSpace($verNode.Value)) { throw "Version attribuut niet gevonden in .vsto" }
-
-          $version = $verNode.Value
-          "CLICKONCE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "version=$version"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Version: $version"
-
-      # 2c) Guard: fail als tag of gh-pages die versie al heeft
+      # 2b) Guard: fail als tag of gh-pages die versie al heeft
       - name: Guard - fail if version already released
         shell: pwsh
         run: |
           $ver = "${{ steps.ver.outputs.version }}"
-          if (-not $ver) { throw "No version extracted" }
+          if (-not $ver) { throw "No version computed" }
 
           git fetch --tags origin | Out-Null
           if (git tag -l "v$ver") { throw "Tag v$ver bestaat al" }
@@ -91,17 +93,12 @@ jobs:
             if ($paths | Where-Object { $_ -match $re }) { throw "gh-pages bevat al artifacts voor $ver" }
           }
 
-      # 3) Prepare site (verwacht vaste bestandsnamen)
+      # 3) Zet volledige publish-output naar /clickonce/ op gh-pages
       - name: Prepare site folder for Pages
         shell: pwsh
         run: |
           $pub   = "xafplugin\publish"
           $site  = "site\clickonce"
-          $vsto  = Join-Path $pub  "xafplugin.vsto"
-          $setup = Join-Path $pub  "setup.exe"
-          if (-not (Test-Path $vsto))  { throw "VSTO ontbreekt: $vsto" }
-          if (-not (Test-Path $setup)) { throw "setup.exe ontbreekt: $setup" }
-
           if (Test-Path site) { Remove-Item -Recurse -Force site }
           New-Item -ItemType Directory -Force $site | Out-Null
           Copy-Item "$pub\*" $site -Recurse -Force
@@ -115,20 +112,24 @@ jobs:
         run: |
           $dest = "site\clickonce"
           $ver  = "${{ steps.ver.outputs.version }}"
-          $html = @"
+          $html = @'
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>XafInsight ClickOnce</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>XafInsight ClickOnce</title>
+</head>
 <body>
   <h1>XafInsight ClickOnce deployment</h1>
-  <p><strong>Version:</strong> $ver</p>
+  <p><strong>Version:</strong> VERSION_PLACEHOLDER</p>
   <ul>
     <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>
     <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>
   </ul>
 </body>
 </html>
-"@
+'@
+          $html = $html.Replace('VERSION_PLACEHOLDER', $ver)
           $html | Set-Content -Path "$dest\index.html" -Encoding UTF8
 
       - name: Deploy to gh-pages (keep existing files)
@@ -147,8 +148,6 @@ jobs:
           $out   = "out"
           $vsto  = Join-Path $pub "xafplugin.vsto"
           $setup = Join-Path $pub "setup.exe"
-          if (-not (Test-Path $vsto))  { throw "VSTO ontbreekt: $vsto" }
-          if (-not (Test-Path $setup)) { throw "setup.exe ontbreekt: $setup" }
           if (Test-Path $out) { Remove-Item -Recurse -Force $out }
           New-Item -ItemType Directory -Force $out | Out-Null
           Copy-Item $vsto  (Join-Path $out "xafplugin.vsto") -Force
@@ -171,6 +170,7 @@ jobs:
         run: |
           "SHORT_SHA=$('${{ github.sha }}'.Substring(0,7))" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      # (optioneel) Synchroniseer ApplicationVersion in csproj
       - name: Sync ApplicationVersion in csproj and push [skip ci]
         shell: pwsh
         run: |
@@ -183,7 +183,7 @@ jobs:
           $node = $xml.SelectSingleNode("//msb:Project/msb:PropertyGroup/msb:ApplicationVersion", $nsm)
           if (-not $node) {
             $pg = $xml.SelectSingleNode("//msb:Project/msb:PropertyGroup[1]", $nsm)
-            if (-not $pg) { throw "No PropertyGroup" }
+            if (-not $pg) { throw "No PropertyGroup in csproj" }
             $node = $xml.CreateElement("ApplicationVersion", "http://schemas.microsoft.com/developer/msbuild/2003")
             $pg.AppendChild($node) | Out-Null
           }
