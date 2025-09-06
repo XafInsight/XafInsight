@@ -90,6 +90,18 @@ jobs:
         shell: pwsh
         run: New-Item -ItemType File -Path "site/.nojekyll" -Force | Out-Null
 
+      # 3c) Kopieer publiek certificaat naar de ClickOnce folder
+      - name: Copy public certificate to clickonce folder
+        shell: pwsh
+        run: |
+          $certFile = "xafinsight_codesign.cer"
+          if (Test-Path $certFile) {
+            Copy-Item $certFile "site/clickonce/" -Force
+            Write-Host "Copied $certFile to site/clickonce/"
+          } else {
+            Write-Host "Warning: $certFile not found in repo root."
+          }
+
       - name: Generate index.html
         shell: pwsh
         run: |
@@ -101,6 +113,7 @@ jobs:
           if (Test-Path "$dest\setup.exe")               { $links += '    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>' }
           if (Test-Path "$dest\xafplugin.vsto")          { $links += '    <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>' }
           if (Test-Path "$dest\xafplugin.application")   { $links += '    <li><a href="xafplugin.application">xafplugin.application</a> (ClickOnce manifest)</li>' }
+          if (Test-Path "$dest\xafinsight_codesign.cer") { $links += '    <li><a href="xafinsight_codesign.cer">xafinsight_codesign.cer</a> (signing certificate)</li>' }
 
           $htmlLines = @(
             '<!doctype html>',
