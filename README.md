@@ -21,6 +21,14 @@
 
 ---
 
+## Roadmap / TODO
+- [ ] Implement default settings loading for Auditfiles  
+- [ ] Add additional built-in analyses (beyond Benford’s Law)  
+- [ ] Improve error handling for edge cases and large files  
+- [ ] Create a dedicated documentation and user guide page  
+
+---
+
 ## Features
 ⚡ **Lightning fast from XAF to Excel** — import and export directly to Excel sheets.  
 🧩 **Tables & relationships** — create tables and define relationships between entities.  
