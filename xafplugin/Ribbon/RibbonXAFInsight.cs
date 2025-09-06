@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Forms.Integration;
@@ -261,11 +262,20 @@ namespace xafplugin.Ribbon
             }
         }
 
-        #endregion
+        public void ButtonApplicationInfo_Click(Office.IRibbonControl control)
+        {
+            string version = Helpers.VersionHelper.GetDisplayVersion();
+            _dialog.ShowInfo(
+                $"XAF Insight Add-in\nVersion: {Globals.ThisAddIn.Application.Version}\n\n" +
+                "Build version: " + version + "\n\n" +
+                "Developed by the Roy.\n");
+        }
 
-        #region Ribbon UI Callbacks
+            #endregion
 
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060", Justification = "Office Ribbon callback signature")]
+            #region Ribbon UI Callbacks
+
+            [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060", Justification = "Office Ribbon callback signature")]
         public bool ButtonConnect_GetEnabled(Office.IRibbonControl control)
         {
             var dbPath = _env.DatabasePath;
@@ -354,6 +364,12 @@ namespace xafplugin.Ribbon
         public stdole.IPictureDisp GetReportIssueButtonImage(Office.IRibbonControl control)
         {
             var bmp = Properties.Resources.issue;
+            return PictureConverter.ImageToPictureDisp(bmp);
+        }
+
+        public stdole.IPictureDisp GetApplicationInfoImage(Office.IRibbonControl control)
+        {
+            var bmp = Properties.Resources.info;
             return PictureConverter.ImageToPictureDisp(bmp);
         }
         #endregion
