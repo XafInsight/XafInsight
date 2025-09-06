@@ -23,6 +23,18 @@ jobs:
       - name: Restore NuGet
         run: nuget restore xafplugin.sln
 
+      # --- Certificaat herstellen uit secrets ---
+      - name: Restore signing certificate (PFX)
+        id: cert
+        shell: pwsh
+        run: |
+          if (-not "${{ secrets.CODESIGN_PFX_B64 }}") { throw "Missing secret CODESIGN_PFX_B64" }
+          if (-not "${{ secrets.CODESIGN_PFX_PASSWORD }}") { throw "Missing secret CODESIGN_PFX_PASSWORD" }
+          $bytes = [Convert]::FromBase64String("${{ secrets.CODESIGN_PFX_B64 }}")
+          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $bytes)
+          "pfx_path=$pfxPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Determine branch and URLs
         id: meta
         shell: pwsh
@@ -32,43 +44,50 @@ jobs:
           if ($branch -eq "testing") {
             $path = "clickonce-testing"
             $install = "$base/$path/"
-            echo "publish_target=$path"        >> $env:GITHUB_OUTPUT
-            echo "install_url=$install"        >> $env:GITHUB_OUTPUT
-            echo "override_urls=true"          >> $env:GITHUB_OUTPUT
+            "publish_target=$path"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "install_url=$install"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "override_urls=true"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           } elseif ($branch -eq "main") {
             $path = "clickonce"
-            # main gebruikt InstallUrl/UpdateUrl uit csproj (productie)
-            echo "publish_target=$path"        >> $env:GITHUB_OUTPUT
-            echo "override_urls=false"         >> $env:GITHUB_OUTPUT
+            "publish_target=$path"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "override_urls=false"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           } else {
             throw "Unexpected branch: $branch"
           }
 
-      # Build + ClickOnce Publish
+      # Build + ClickOnce Publish (gesigned)
       # testing → override InstallUrl/UpdateUrl naar /clickonce-testing/
-      - name: ClickOnce Publish (testing)
+      - name: ClickOnce Publish (testing, signed)
         if: steps.meta.outputs.override_urls == 'true'
+        shell: pwsh
         run: >
-          msbuild xafplugin\xafplugin.csproj
+          msbuild xafplugin/xafplugin.csproj
           /t:Publish /p:Configuration=Release
           /p:AutoIncrementApplicationRevision=true
-          /p:InstallUrl=${{ steps.meta.outputs.install_url }}
-          /p:UpdateUrl=${{ steps.meta.outputs.install_url }}
+          /p:InstallUrl='${{ steps.meta.outputs.install_url }}'
+          /p:UpdateUrl='${{ steps.meta.outputs.install_url }}'
+          /p:SignManifests=true
+          /p:ManifestKeyFile='${{ steps.cert.outputs.pfx_path }}'
+          /p:ManifestKeyPassword='${{ secrets.CODESIGN_PFX_PASSWORD }}'
 
-      # main → gebruik je csproj (productie InstallUrl), geen override
-      - name: ClickOnce Publish (main)
+      # main → gebruik csproj (productie InstallUrl), geen URL-override
+      - name: ClickOnce Publish (main, signed)
         if: steps.meta.outputs.override_urls != 'true'
+        shell: pwsh
         run: >
-          msbuild xafplugin\xafplugin.csproj
+          msbuild xafplugin/xafplugin.csproj
           /t:Publish /p:Configuration=Release
           /p:AutoIncrementApplicationRevision=true
+          /p:SignManifests=true
+          /p:ManifestKeyFile='${{ steps.cert.outputs.pfx_path }}'
+          /p:ManifestKeyPassword='${{ secrets.CODESIGN_PFX_PASSWORD }}'
 
       # Maak een tijdelijke site-map met alléén de juiste subfolder
       - name: Prepare site folder for Pages
         shell: pwsh
         run: |
           if (Test-Path site) { Remove-Item -Recurse -Force site }
-          New-Item -ItemType Directory -Force site\${{ steps.meta.outputs.publish_target }} | Out-Null
+          New-Item -ItemType Directory -Force "site/${{ steps.meta.outputs.publish_target }}" | Out-Null
           Copy-Item "xafplugin\publish\*" "site\${{ steps.meta.outputs.publish_target }}" -Recurse -Force
 
       # Deploy naar gh-pages en bewaar bestaande files (zodat beide paden naast elkaar bestaan)
