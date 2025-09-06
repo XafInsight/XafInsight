@@ -61,17 +61,31 @@
 ---
 
 ## Frequently Asked Questions (FAQ)
-**Q:** Which Auditfile versions are supported?  
-**A:** XAF 3.0–3.2. Other versions may work with manual adjustments.
 
-**Q:** What are the system requirements?  
-**A:** Windows 10/11, Excel 2019/2021/365, .NET Framework 4.8.
+<details>
+  <summary><strong>Which Auditfile versions are supported?</strong></summary>
 
-**Q:** Can I share settings with my team?  
-**A:** Yes, export/import settings and configurations for collaboration.
+XAF 3.0–3.2. Other versions may work with manual adjustments.
+</details>
 
-**Q:** Can I generate an audit trail for compliance?  
-**A:** Yes, XafInsight provides an audit trail with details of exports and filters.
+<details>
+  <summary><strong>What are the system requirements?</strong></summary>
+
+Windows 10/11, Excel 2019/2021/365, .NET Framework 4.8.
+</details>
+
+<details>
+  <summary><strong>Can I share settings with my team?</strong></summary>
+
+Yes, export/import settings and configurations for collaboration.
+</details>
+
+<details>
+  <summary><strong>Can I generate an audit trail for compliance?</strong></summary>
+
+Yes, XafInsight provides an audit trail with details of exports and filters.
+</details>
+
 
 ---
 
