@@ -3,13 +3,9 @@ using NLog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Forms;
-using System.Windows.Input;
 using System.Windows.Interop;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using xafplugin.Database;
 using xafplugin.Helpers;
@@ -121,16 +117,16 @@ namespace xafplugin.Form
                         };
                         _viewModel.Filters.Add(filterItem);
 
-                            var sqlDbPath = _env.DatabasePath;
-                            using (var databaseService = new DatabaseService(sqlDbPath))
+                        var sqlDbPath = _env.DatabasePath;
+                        using (var databaseService = new DatabaseService(sqlDbPath))
+                        {
+                            var sqlCTEQuery = ExportDefinitionHelper.SqlQueryWithCte(_viewModel.SelectedTable, _viewModel.Filters.ToList());
+                            if (!databaseService.IsValidAgainstDb(sqlCTEQuery) || !databaseService.QueryHasRowsAny(sqlCTEQuery))
                             {
-                                var sqlCTEQuery = ExportDefinitionHelper.SqlQueryWithCte(_viewModel.SelectedTable, _viewModel.Filters.ToList());
-                                if (!databaseService.IsValidAgainstDb(sqlCTEQuery) || !databaseService.QueryHasRowsAny(sqlCTEQuery))
-                                {
-                                    _viewModel.Filters.Remove(filterItem);
-                                    _dialog.ShowError("No results from filter or validation failed against the database.");
-                                }
+                                _viewModel.Filters.Remove(filterItem);
+                                _dialog.ShowError("No results from filter or validation failed against the database.");
                             }
+                        }
                     }
                 }
                 catch (Exception ex)

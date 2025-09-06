@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using NLog;
 using System;
 using System.Collections.Generic;
@@ -6,7 +7,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.Data.Sqlite;
 
 namespace xafplugin.Database
 {
@@ -43,7 +43,7 @@ namespace xafplugin.Database
         public string Import(Stream csvStream, string tableName = null)
         {
             _logger.Info("Importing CSV into SQLite database");
-            
+
             if (csvStream == null)
                 throw new ArgumentNullException(nameof(csvStream));
 
@@ -52,10 +52,10 @@ namespace xafplugin.Database
             {
                 tableName = $"CSVImport_{DateTime.Now:yyyyMMdd_HHmmss}";
             }
-            
+
             // Sanitize table name (remove invalid characters)
             tableName = SanitizeTableName(tableName);
-            
+
             _logger.Info($"Using table name: {tableName}");
 
             try
@@ -70,10 +70,10 @@ namespace xafplugin.Database
 
                 // Create table in database
                 CreateTable(tableName, data);
-                
+
                 // Import data
                 ImportData(tableName, data);
-                
+
                 _logger.Info($"Successfully imported CSV data into table '{tableName}'");
                 return tableName;
             }
@@ -88,7 +88,7 @@ namespace xafplugin.Database
         {
             _logger.Debug("Parsing CSV stream");
             var data = new DataTable();
-            
+
             using (var reader = new StreamReader(csvStream, _encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: true))
             {
                 string line;
@@ -108,13 +108,13 @@ namespace xafplugin.Database
                         for (int i = 0; i < headers.Count; i++)
                         {
                             var columnName = SanitizeColumnName(headers[i]) ?? $"Column{i}";
-                            
+
                             // Ensure unique column names
                             if (data.Columns.Contains(columnName))
                             {
                                 columnName = $"{columnName}_{i}";
                             }
-                            
+
                             data.Columns.Add(columnName, typeof(string));
                         }
                         lineCount++;
@@ -131,7 +131,7 @@ namespace xafplugin.Database
                     {
                         line = reader.ReadLine();
                     }
-                    
+
                     if (line != null)
                     {
                         var values = ParseCsvLine(line);
@@ -139,7 +139,7 @@ namespace xafplugin.Database
                         {
                             data.Columns.Add($"Column{i}", typeof(string));
                         }
-                        
+
                         // Add first line as data if we're not using headers
                         if (!_hasHeaders)
                         {
@@ -163,41 +163,41 @@ namespace xafplugin.Database
 
                     var values = ParseCsvLine(line);
                     var row = data.NewRow();
-                    
+
                     // Ensure we don't exceed column count
                     for (int i = 0; i < values.Count && i < data.Columns.Count; i++)
                     {
                         row[i] = values[i];
                     }
-                    
+
                     data.Rows.Add(row);
                     lineCount++;
                 }
-                
+
                 _logger.Debug($"Parsed {lineCount} lines from CSV");
             }
-            
+
             return data;
         }
 
         private void CreateTable(string tableName, DataTable data)
         {
             _logger.Debug($"Creating table '{tableName}'");
-            
+
             var createTableSql = new StringBuilder();
             createTableSql.Append($"CREATE TABLE IF NOT EXISTS [{tableName}] (");
-            
+
             for (int i = 0; i < data.Columns.Count; i++)
             {
                 string columnName = data.Columns[i].ColumnName;
                 createTableSql.Append($"[{columnName}] TEXT");
-                
+
                 if (i < data.Columns.Count - 1)
                     createTableSql.Append(", ");
             }
-            
+
             createTableSql.Append(")");
-            
+
             using (var cmd = _connection.CreateCommand())
             {
                 cmd.CommandText = createTableSql.ToString();
@@ -208,7 +208,7 @@ namespace xafplugin.Database
         private void ImportData(string tableName, DataTable data)
         {
             _logger.Debug($"Importing {data.Rows.Count} rows into table '{tableName}'");
-            
+
             // Begin transaction for faster imports
             using (var transaction = _connection.BeginTransaction())
             {
@@ -217,25 +217,25 @@ namespace xafplugin.Database
                     // Prepare the insert statement
                     var insertSql = new StringBuilder();
                     insertSql.Append($"INSERT INTO [{tableName}] (");
-                    
+
                     for (int i = 0; i < data.Columns.Count; i++)
                     {
                         insertSql.Append($"[{data.Columns[i].ColumnName}]");
-                        
+
                         if (i < data.Columns.Count - 1)
                             insertSql.Append(", ");
                     }
-                    
+
                     insertSql.Append(") VALUES (");
-                    
+
                     for (int i = 0; i < data.Columns.Count; i++)
                     {
                         insertSql.Append($"@p{i}");
-                        
+
                         if (i < data.Columns.Count - 1)
                             insertSql.Append(", ");
                     }
-                    
+
                     insertSql.Append(")");
 
                     // Insert each row
@@ -243,7 +243,7 @@ namespace xafplugin.Database
                     {
                         cmd.CommandText = insertSql.ToString();
                         cmd.Transaction = transaction;
-                        
+
                         // Create parameters
                         for (int i = 0; i < data.Columns.Count; i++)
                         {
@@ -259,11 +259,11 @@ namespace xafplugin.Database
                             {
                                 cmd.Parameters[$"@p{i}"].Value = row[i] ?? DBNull.Value;
                             }
-                            
+
                             cmd.ExecuteNonQuery();
                         }
                     }
-                    
+
                     transaction.Commit();
                 }
                 catch (Exception ex)
@@ -278,21 +278,21 @@ namespace xafplugin.Database
         private List<string> ParseCsvLine(string line)
         {
             var result = new List<string>();
-            
+
             // Check if we're dealing with a simple CSV without quoted values
             if (!line.Contains("\""))
             {
                 return line.Split(_delimiter).ToList();
             }
-            
+
             // Handle more complex CSV with quoted values
             bool inQuote = false;
             var currentValue = new StringBuilder();
-            
+
             for (int i = 0; i < line.Length; i++)
             {
                 char c = line[i];
-                
+
                 if (c == '"')
                 {
                     // Check for escaped quotes
@@ -316,29 +316,29 @@ namespace xafplugin.Database
                     currentValue.Append(c);
                 }
             }
-            
+
             // Add the last value
             result.Add(currentValue.ToString());
-            
+
             return result;
         }
 
         private bool IsPageBreak(string line)
         {
             // Common page break indicators
-            return line.Contains("\f") || line.Contains("\u000C") || line.Contains("PAGE") || 
+            return line.Contains("\f") || line.Contains("\u000C") || line.Contains("PAGE") ||
                    Regex.IsMatch(line, @"^\s*-{3,}\s*$") || Regex.IsMatch(line, @"^\s*={3,}\s*$", RegexOptions.None, TimeSpan.FromMilliseconds(100));
         }
 
         private string SanitizeTableName(string name)
         {
             // Remove invalid characters and sanitize for SQLite
-            var sanitized = Regex.Replace(name, @"[^\w]", "_",RegexOptions.None, TimeSpan.FromMilliseconds(100));
-            
+            var sanitized = Regex.Replace(name, @"[^\w]", "_", RegexOptions.None, TimeSpan.FromMilliseconds(100));
+
             // Ensure it doesn't start with a number
             if (char.IsDigit(sanitized[0]))
                 sanitized = "t_" + sanitized;
-                
+
             return sanitized;
         }
 
@@ -346,37 +346,37 @@ namespace xafplugin.Database
         {
             if (string.IsNullOrWhiteSpace(name))
                 return null;
-                
+
             // Remove invalid characters and sanitize for SQLite
             var sanitized = Regex.Replace(name.Trim(), @"[^\w]", "_", RegexOptions.None, TimeSpan.FromMilliseconds(100));
-            
+
             // Ensure it doesn't start with a number
             if (sanitized.Length > 0 && char.IsDigit(sanitized[0]))
                 sanitized = "c_" + sanitized;
-                
+
             return sanitized;
         }
-        
+
         // Implement IDisposable pattern
         public void Dispose()
         {
             Dispose(true);
             GC.SuppressFinalize(this);
         }
-        
+
         protected virtual void Dispose(bool disposing)
         {
             if (_disposed)
                 return;
-                
+
             if (disposing)
             {
                 // Dispose managed resources
                 _connection?.Dispose();
             }
-            
+
             // Free unmanaged resources
-            
+
             _disposed = true;
         }
     }

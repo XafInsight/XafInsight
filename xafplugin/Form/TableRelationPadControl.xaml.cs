@@ -1,7 +1,6 @@
 ﻿using Microsoft.VisualBasic;
 using NLog;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Forms;
@@ -225,22 +224,22 @@ namespace xafplugin.Form
         private void BtnMoveUp_Click(object sender, RoutedEventArgs e)
         {
             _logger.Info("BtnMoveUp_Click gestart.");
-            
+
             if (ListSelectedColumns.SelectedItems.Count > 0)
             {
                 // Create a copy of the selected items to maintain selection after moving
                 var selectedColumns = ListSelectedColumns.SelectedItems.Cast<ColumnDescriptor>().ToList();
-                
+
                 // Move the columns up
                 _viewModel.MoveColumnsUp(selectedColumns);
-                
+
                 // Restore selection
                 ListSelectedColumns.SelectedItems.Clear();
                 foreach (var column in selectedColumns)
                 {
                     ListSelectedColumns.SelectedItems.Add(column);
                 }
-                
+
                 // Focus the list again
                 ListSelectedColumns.Focus();
             }
@@ -253,22 +252,22 @@ namespace xafplugin.Form
         private void BtnMoveDown_Click(object sender, RoutedEventArgs e)
         {
             _logger.Info("BtnMoveDown_Click gestart.");
-            
+
             if (ListSelectedColumns.SelectedItems.Count > 0)
             {
                 // Create a copy of the selected items to maintain selection after moving
                 var selectedColumns = ListSelectedColumns.SelectedItems.Cast<ColumnDescriptor>().ToList();
-                
+
                 // Move the columns down
                 _viewModel.MoveColumnsDown(selectedColumns);
-                
+
                 // Restore selection
                 ListSelectedColumns.SelectedItems.Clear();
                 foreach (var column in selectedColumns)
                 {
                     ListSelectedColumns.SelectedItems.Add(column);
                 }
-                
+
                 // Focus the list again
                 ListSelectedColumns.Focus();
             }

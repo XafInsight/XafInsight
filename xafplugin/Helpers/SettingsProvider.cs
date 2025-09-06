@@ -3,8 +3,6 @@ using NLog;
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using xafplugin.Interfaces;
 using xafplugin.Modules;
 

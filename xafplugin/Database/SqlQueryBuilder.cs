@@ -2,8 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using xafplugin.Helpers;
 using xafplugin.Modules;
 
@@ -77,7 +75,7 @@ namespace xafplugin.Database
                 throw new ArgumentNullException(nameof(export));
 
             var selectColumns = export.SelectedColumns
-                .Where(c => c.IsCustom != true) 
+                .Where(c => c.IsCustom != true)
                 .Select(c => $"[{c.Table}].[{c.Column}]")
                 .ToList();
 

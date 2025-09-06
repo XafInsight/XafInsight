@@ -1,8 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using xafplugin.Modules;
 
 namespace xafplugin.Helpers
@@ -45,7 +42,7 @@ namespace xafplugin.Helpers
                     validTables.Contains(r.RelatedTable))
                 .ToList();
         }
-    public static bool IsRelationValid(TableRelation relation, Dictionary<string, List<string>> tableColumns)
+        public static bool IsRelationValid(TableRelation relation, Dictionary<string, List<string>> tableColumns)
         {
             if (relation == null || tableColumns == null)
                 return false;

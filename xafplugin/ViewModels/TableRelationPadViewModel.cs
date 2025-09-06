@@ -1,12 +1,9 @@
-﻿using NLog;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
 using System.Windows.Forms;
 using xafplugin.Database;
-using xafplugin.Helpers;
 using xafplugin.Interfaces;
 using xafplugin.Modules;
 

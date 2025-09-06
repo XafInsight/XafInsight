@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using System.Windows.Input;
 using xafplugin.Database;
-using xafplugin.Helpers;
 using xafplugin.Interfaces;
 using xafplugin.Modules;
 

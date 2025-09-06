@@ -1,7 +1,6 @@
 ﻿using NLog;
 using System.Windows;
 using System.Windows.Controls;
-using xafplugin.Database;
 using xafplugin.Helpers;
 using xafplugin.Modules;
 using xafplugin.ViewModels;
@@ -70,5 +69,6 @@ namespace xafplugin.Form
             {
                 vm.SaveRelationsToSettings();
             }
-        }    }
+        }
+    }
 }
