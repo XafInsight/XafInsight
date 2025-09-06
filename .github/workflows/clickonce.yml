@@ -1,7 +1,7 @@
 name: Build & Publish VSTO (main → GitHub Pages)
 
 permissions:
-  contents: write  # push naar gh-pages + releases
+  contents: write
 
 on:
   push:
@@ -15,13 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup MSBuild
+      - name: Setup MSBuild (VS 2022 x64)
         uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: '[17.0,18.0)'
+          msbuild-architecture: 'x64'
+          vs-prerelease: true
 
       - name: Restore NuGet
         run: nuget restore xafplugin.sln
 
-      # 1) Decodeer PFX, importeer in CurrentUser\My, expose THUMBPRINT
+      # 1) Import codesign PFX (fail-fast)
       - name: Restore & import signing certificate
         id: cert
         shell: pwsh
@@ -31,17 +35,13 @@ jobs:
 
           $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.CODESIGN_PFX_B64 }}"))
-
-          certutil -p "${{ secrets.CODESIGN_PFX_PASSWORD }}" -dump "$pfxPath" | Out-Null
-
           $sec = ConvertTo-SecureString "${{ secrets.CODESIGN_PFX_PASSWORD }}" -AsPlainText -Force
-          $cert = Import-PfxCertificate -FilePath "$pfxPath" -CertStoreLocation Cert:\CurrentUser\My -Password $sec
-          if (-not $cert.HasPrivateKey) { throw "Imported cert has no private key" }
-
+          $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $sec
+          if (-not $cert -or -not $cert.HasPrivateKey) { throw "Cert import failed or no private key" }
           "thumb=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      # 2) ClickOnce Publish (gesigned via THUMBPRINT) + forceer outputmap
-      - name: ClickOnce Publish (main, signed via thumbprint)
+      # 2) Publish ClickOnce (Excel VSTO) naar vaste map
+      - name: ClickOnce Publish
         shell: pwsh
         run: >
           msbuild "xafplugin/xafplugin.csproj"
@@ -52,177 +52,84 @@ jobs:
           /p:PublishDir="$((Resolve-Path .).Path)\xafplugin\publish\"
           /p:ManifestTimestampUrl=http://timestamp.digicert.com
 
-      # (Nieuw) Toon publish-output direct na publish voor debug
-      - name: List publish output (after publish)
-        shell: pwsh
-        run: |
-          Write-Host "Workspace: $((Resolve-Path .).Path)"
-          if (Test-Path "xafplugin\publish") {
-            Write-Host "Publish folder content:"
-            Get-ChildItem -Recurse -Force "xafplugin\publish" | ForEach-Object { Write-Host $_.FullName }
-          } else {
-            Write-Host "Publish folder not found."
-            Write-Host "Fallback check (bin\Release\app.publish):"
-            if (Test-Path "xafplugin\bin\Release\app.publish") {
-              Get-ChildItem -Recurse -Force "xafplugin\bin\Release\app.publish" | ForEach-Object { Write-Host $_.FullName }
-            }
-          }
-
-      # 2b) Versie uit VSTO-manifest halen (strict: .vsto verplicht)
+      # 2b) Version uit .vsto (fail-fast, vaste padnamen)
       - name: Extract ClickOnce version from VSTO
         id: ver
         shell: pwsh
         run: |
-          $pubDir = "xafplugin\publish"
-      
-          # 1) Zoek .vsto (moet bestaan, anders falen)
-          $vstoFile = Get-ChildItem -Path $pubDir -Recurse -File -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $vstoFile) {
-            Write-Host "Publish directory scanned: $pubDir"
-            if (Test-Path $pubDir) {
-              Write-Host "Publish content:"
-              Get-ChildItem -Recurse -Force $pubDir | ForEach-Object { Write-Host $_.FullName }
-            }
-            Write-Error "VSTO manifest (.vsto) niet gevonden. Build faalt."
-            exit 1
-          }
-      
-          # 2) Lees XML en pak version van asmv1:assemblyIdentity (prefix-onafhankelijk)
-          [xml]$xml = Get-Content -LiteralPath $vstoFile.FullName
-      
-          # Probeer eerst de top-level assembly/assemblyIdentity in asm.v1
+          $pub  = "xafplugin\publish"
+          $vsto = Join-Path $pub "xafplugin.vsto"
+          if (-not (Test-Path -LiteralPath $vsto)) { throw ".vsto niet gevonden op verwachte locatie: $vsto" }
+
+          [xml]$xml = Get-Content -LiteralPath $vsto
           $verNode = $xml.SelectSingleNode(
             "/*[local-name()='assembly' and namespace-uri()='urn:schemas-microsoft-com:asm.v1']/*[local-name()='assemblyIdentity' and namespace-uri()='urn:schemas-microsoft-com:asm.v1']/@version"
           )
-      
-          # Fallback: eender welke asm.v1 assemblyIdentity verderop (bv. in RelData)
-          if (-not $verNode) {
-            $verNode = $xml.SelectSingleNode(
-              "//*[local-name()='assemblyIdentity' and namespace-uri()='urn:schemas-microsoft-com:asm.v1']/@version"
-            )
-          }
-      
-          if (-not $verNode -or [string]::IsNullOrWhiteSpace($verNode.Value)) {
-            Write-Host "VSTO manifest: $($vstoFile.FullName)"
-            Write-Error "Kon geen version-attribuut vinden op asm.v1:assemblyIdentity in .vsto."
-            exit 1
-          }
-      
+          if (-not $verNode -or [string]::IsNullOrWhiteSpace($verNode.Value)) { throw "Version attribuut niet gevonden in .vsto" }
+
           $version = $verNode.Value
-      
           "CLICKONCE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           "version=$version"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-      
-          Write-Host "VSTO: $($vstoFile.FullName)"
-          Write-Host "ClickOnce version: $version"
-      
-      
-            # 2c) Guard: faal als versie al bestaat (tag of al op gh-pages)
-            - name: Guard - fail if version already released
-              shell: pwsh
-              run: |
-                $ver = "${{ steps.ver.outputs.version }}"
-                if (-not $ver) { Write-Error "No version from manifest"; exit 1 }
-      
-                # 1) Tag check
-                git fetch --tags origin | Out-Null
-                $tagExists = git tag -l "v$ver"
-                if ($tagExists) {
-                  Write-Error "Tag v$ver already exists. Aborting to avoid duplicate release."
-                  exit 1
-                }
-      
-                # 2) gh-pages check — zoek naar een Application Files pad dat deze versie bevat
-                try {
-                  git fetch origin gh-pages --depth=1 | Out-Null
-                  $paths = git ls-tree -r --name-only origin/gh-pages
-                  if ($paths) {
-                    $re = 'clickonce[\\/]+Application Files[\\/].*' + [regex]::Escape($ver)
-                    $match = $paths | Where-Object { $_ -match $re }
-                    if ($match) {
-                      Write-Error "gh-pages already contains artifacts for version $ver. Aborting."
-                      exit 1
-                    }
-                  }
-                } catch {
-                  Write-Host "gh-pages does not exist yet (first deploy) — continuing."
-                }
-      
-                Write-Host "Version $ver is new — continuing."
+          Write-Host "Version: $version"
 
-      # 3) Zet volledige publish-output naar /clickonce/ op gh-pages
+      # 2c) Guard: fail als tag of gh-pages die versie al heeft
+      - name: Guard - fail if version already released
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          if (-not $ver) { throw "No version extracted" }
+
+          git fetch --tags origin | Out-Null
+          if (git tag -l "v$ver") { throw "Tag v$ver bestaat al" }
+
+          # ClickOnce mappen gebruiken underscores (1.2.3.4 -> 1_2_3_4)
+          $vUS = ($ver -replace '\.','_')
+          try { git fetch origin gh-pages --depth=1 | Out-Null } catch { }
+          $paths = git ls-tree -r --name-only origin/gh-pages 2>$null
+          if ($paths) {
+            $re = 'clickonce[\\/]+Application Files[\\/].*(' + [regex]::Escape($ver) + '|' + [regex]::Escape($vUS) + ')'
+            if ($paths | Where-Object { $_ -match $re }) { throw "gh-pages bevat al artifacts voor $ver" }
+          }
+
+      # 3) Prepare site (verwacht vaste bestandsnamen)
       - name: Prepare site folder for Pages
         shell: pwsh
         run: |
+          $pub   = "xafplugin\publish"
+          $site  = "site\clickonce"
+          $vsto  = Join-Path $pub  "xafplugin.vsto"
+          $setup = Join-Path $pub  "setup.exe"
+          if (-not (Test-Path $vsto))  { throw "VSTO ontbreekt: $vsto" }
+          if (-not (Test-Path $setup)) { throw "setup.exe ontbreekt: $setup" }
+
           if (Test-Path site) { Remove-Item -Recurse -Force site }
-          New-Item -ItemType Directory -Force "site/clickonce" | Out-Null
-          Copy-Item "xafplugin\publish\*" "site\clickonce" -Recurse -Force
+          New-Item -ItemType Directory -Force $site | Out-Null
+          Copy-Item "$pub\*" $site -Recurse -Force
 
-      # 3a) Forceer binaire bytes (geen CRLF/LF conversie) voor alles onder /clickonce/
-      - name: Add .gitattributes to preserve file bytes
-        shell: pwsh
-        run: |
-          $lines = @(
-            '# Force binary handling: no CRLF/LF conversion for ClickOnce payload'
-            '/clickonce/** -text'
-          )
-          Set-Content -Path "site/.gitattributes" -Value $lines -Encoding ASCII
+          # force binary bytes + nojekyll
+          Set-Content -Path "site/.gitattributes" -Value @('# binary','/clickonce/** -text') -Encoding ASCII
+          New-Item -ItemType File -Path "site/.nojekyll" -Force | Out-Null
 
-      # 3b) Zet .nojekyll zodat GitHub Pages niets probeert te verwerken
-      - name: Disable Jekyll on GitHub Pages
-        shell: pwsh
-        run: New-Item -ItemType File -Path "site/.nojekyll" -Force | Out-Null
-
-      # 3c) Kopieer publiek certificaat naar de ClickOnce folder
-      - name: Copy public certificate to clickonce folder
-        shell: pwsh
-        run: |
-          $certFile = "xafinsight_codesign.cer"
-          if (Test-Path $certFile) {
-            Copy-Item $certFile "site/clickonce/" -Force
-            Write-Host "Copied $certFile to site/clickonce/"
-          } else {
-            Write-Host "Warning: $certFile not found in repo root."
-          }
-
-      # 3d) Genereer index.html en toon versie (zonder .application)
       - name: Generate index.html
         shell: pwsh
         run: |
           $dest = "site\clickonce"
           $ver  = "${{ steps.ver.outputs.version }}"
-          New-Item -ItemType Directory -Force $dest | Out-Null
-
-          $links = @()
-          if (Test-Path "$dest\setup.exe")      { $links += '    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>' }
-          # VSTO manifest kan willekeurige naam hebben — zoek recursief en link de eerste
-          $vsto = Get-ChildItem $dest -Recurse -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($vsto) {
-            $rel = $vsto.FullName.Substring((Resolve-Path $dest).Path.Length + 1) -replace '\\','/'
-            $links += "    <li><a href=""$rel"">$(Split-Path -Leaf $rel)</a> (add-in manifest)</li>"
-          }
-          if (Test-Path "$dest\xafinsight_codesign.cer") { $links += '    <li><a href="xafinsight_codesign.cer">xafinsight_codesign.cer</a> (signing certificate)</li>' }
-
-          $htmlLines = @(
-            '<!doctype html>',
-            '<html lang="en">',
-            '<head>',
-            '  <meta charset="utf-8" />',
-            '  <meta http-equiv="x-ua-compatible" content="ie=edge" />',
-            '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
-            '  <title>XafInsight ClickOnce</title>',
-            '</head>',
-            '<body>',
-            '  <h1>XafInsight ClickOnce deployment</h1>',
-            "  <p><strong>Version:</strong> $ver</p>",
-            '  <ul>'
-          ) + $links + @(
-            '  </ul>',
-            '</body>',
-            '</html>'
-          )
-
-          $htmlLines | Set-Content -Path "$dest\index.html" -Encoding UTF8
+          $html = @"
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>XafInsight ClickOnce</title></head>
+<body>
+  <h1>XafInsight ClickOnce deployment</h1>
+  <p><strong>Version:</strong> $ver</p>
+  <ul>
+    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>
+    <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>
+  </ul>
+</body>
+</html>
+"@
+          $html | Set-Content -Path "$dest\index.html" -Encoding UTF8
 
       - name: Deploy to gh-pages (keep existing files)
         uses: peaceiris/actions-gh-pages@v3
@@ -232,95 +139,65 @@ jobs:
           publish_branch: gh-pages
           keep_files: true
 
-      # 4) Verzamelen van release-assets (recursief zoeken, geen .application)
+      # 4) Release assets (vaste namen, fail-fast)
       - name: Collect release assets
         shell: pwsh
         run: |
-          if (Test-Path out) { Remove-Item -Recurse -Force out }
-          New-Item -ItemType Directory -Force out | Out-Null
+          $pub   = "xafplugin\publish"
+          $out   = "out"
+          $vsto  = Join-Path $pub "xafplugin.vsto"
+          $setup = Join-Path $pub "setup.exe"
+          if (-not (Test-Path $vsto))  { throw "VSTO ontbreekt: $vsto" }
+          if (-not (Test-Path $setup)) { throw "setup.exe ontbreekt: $setup" }
+          if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item $vsto  (Join-Path $out "xafplugin.vsto") -Force
+          Copy-Item $setup (Join-Path $out "setup.exe")      -Force
 
-          $src = "xafplugin\publish"
+          $appFiles = Join-Path $pub "Application Files"
+          if (-not (Test-Path $appFiles)) { throw "'Application Files' map ontbreekt: $appFiles" }
+          Add-Type -A System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory($appFiles, (Join-Path $out "application-files.zip"))
 
-          $vsto  = Get-ChildItem $src -Recurse -Filter *.vsto -ErrorAction SilentlyContinue | Select-Object -First 1
-          $setup = Get-ChildItem $src -Recurse -Filter setup.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-
-          if ($vsto)  { Copy-Item $vsto.FullName  "out\xafplugin.vsto" -Force }
-          if ($setup) { Copy-Item $setup.FullName "out\setup.exe"      -Force }
-
-          # Laat ook de map Application Files als zip achter (handig voor debug/archief)
-          $appFiles = Join-Path $src "Application Files"
-          if (Test-Path $appFiles) {
-            Add-Type -A System.IO.Compression.FileSystem
-            $zip = Join-Path (Resolve-Path out) "application-files.zip"
-            if (Test-Path $zip) { Remove-Item $zip -Force }
-            [System.IO.Compression.ZipFile]::CreateFromDirectory($appFiles, $zip)
-          }
-
-      # 4a) Hernoem assets met versie
       - name: Rename assets with version
         shell: pwsh
         run: |
           $v = "${{ steps.ver.outputs.version }}"
-          $outDir = "out"
-      
-          $vstoSrc = Join-Path $outDir "xafplugin.vsto"
-          $setupSrc = Join-Path $outDir "setup.exe"
-      
-          if (Test-Path -LiteralPath $vstoSrc) {
-            $vstoNewName = "xafplugin-$v.vsto"     # alleen naam
-            Rename-Item -LiteralPath $vstoSrc -NewName $vstoNewName -ErrorAction Stop
-          }
-      
-          if (Test-Path -LiteralPath $setupSrc) {
-            $setupNewName = "setup-$v.exe"         # alleen naam
-            Rename-Item -LiteralPath $setupSrc -NewName $setupNewName -ErrorAction Stop
-          }
+          Rename-Item -LiteralPath "out\xafplugin.vsto" "xafplugin-$v.vsto" -ErrorAction Stop
+          Rename-Item -LiteralPath "out\setup.exe"      "setup-$v.exe"      -ErrorAction Stop
 
-
-      # 4b) Korte SHA voor in de release-naam
       - name: Compute short SHA
         shell: pwsh
         run: |
-          $short = "${{ github.sha }}".Substring(0,7)
-          "SHORT_SHA=$short" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SHORT_SHA=$('${{ github.sha }}'.Substring(0,7))" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # 4c) Schrijf de ClickOnce versie terug in xafplugin.csproj zodat baseline meeloopt
       - name: Sync ApplicationVersion in csproj and push [skip ci]
         shell: pwsh
         run: |
           $csproj = "xafplugin\xafplugin.csproj"
           $ver = "${{ steps.ver.outputs.version }}"
-
           if (-not (Test-Path $csproj)) { throw "csproj not found: $csproj" }
-
           [xml]$xml = Get-Content $csproj
           $nsm = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
           $nsm.AddNamespace("msb","http://schemas.microsoft.com/developer/msbuild/2003")
-
           $node = $xml.SelectSingleNode("//msb:Project/msb:PropertyGroup/msb:ApplicationVersion", $nsm)
           if (-not $node) {
             $pg = $xml.SelectSingleNode("//msb:Project/msb:PropertyGroup[1]", $nsm)
-            if (-not $pg) { throw "No PropertyGroup in csproj" }
+            if (-not $pg) { throw "No PropertyGroup" }
             $node = $xml.CreateElement("ApplicationVersion", "http://schemas.microsoft.com/developer/msbuild/2003")
             $pg.AppendChild($node) | Out-Null
           }
-
           $old = $node.InnerText
           $node.InnerText = $ver
           $xml.Save($csproj)
-
           if ($old -ne $ver) {
             git config user.email "ci@github.actions"
             git config user.name  "GitHub Actions"
             git add $csproj
             git commit -m "chore: sync ApplicationVersion to $ver [skip ci]" | Out-Null
             git push origin HEAD:main
-            Write-Host "Updated ApplicationVersion from '$old' to '$ver' and pushed [skip ci]."
-          } else {
-            Write-Host "ApplicationVersion already '$ver'; no commit."
           }
 
-      # 5) Maak/Update een Release voor deze build (tag = v<ClickOnceVersion>)
       - name: Create GitHub Release for build
         uses: softprops/action-gh-release@v2
         with:
