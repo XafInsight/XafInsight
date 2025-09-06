@@ -77,19 +77,34 @@ jobs:
       - name: Generate index.html
         shell: pwsh
         run: |
-          $html = @"
-<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<title>XafInsight ClickOnce</title>
-<h1>XafInsight ClickOnce deployment</h1>
-<ul>
-  <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>
-  <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>
-  <li><a href="xafplugin.application">xafplugin.application</a> (ClickOnce manifest)</li>
-</ul>
-"@
-          Set-Content -Path "site/clickonce/index.html" -Value $html -Encoding UTF8
+          $dest = "site\clickonce"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+
+          # Toon alleen links voor bestanden die bestaan
+          $links = @()
+          if (Test-Path "$dest\setup.exe")               { $links += '    <li><a href="setup.exe">setup.exe</a> (bootstrapper)</li>' }
+          if (Test-Path "$dest\xafplugin.vsto")          { $links += '    <li><a href="xafplugin.vsto">xafplugin.vsto</a> (add-in manifest)</li>' }
+          if (Test-Path "$dest\xafplugin.application")   { $links += '    <li><a href="xafplugin.application">xafplugin.application</a> (ClickOnce manifest)</li>' }
+
+          $htmlLines = @(
+            '<!doctype html>',
+            '<html lang="en">',
+            '<head>',
+            '  <meta charset="utf-8" />',
+            '  <meta http-equiv="x-ua-compatible" content="ie=edge" />',
+            '  <meta name="viewport" content="width=device-width, initial-scale=1" />',
+            '  <title>XafInsight ClickOnce</title>',
+            '</head>',
+            '<body>',
+            '  <h1>XafInsight ClickOnce deployment</h1>',
+            '  <ul>'
+          ) + $links + @(
+            '  </ul>',
+            '</body>',
+            '</html>'
+          )
+
+          $htmlLines | Set-Content -Path "$dest\index.html" -Encoding UTF8
 
       - name: Deploy to gh-pages (keep existing files)
         uses: peaceiris/actions-gh-pages@v3
