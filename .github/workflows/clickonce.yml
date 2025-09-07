@@ -67,6 +67,7 @@ jobs:
           /p:ManifestTimestampUrl=http://timestamp.digicert.com
           /p:AutoIncrementApplicationRevision=false
           /p:ApplicationVersion=${{ steps.ver.outputs.version }}
+          /p:DeployExtension=false
 
       - name: List publish output
         shell: pwsh
